@@ -1291,10 +1291,12 @@ class MainWindow(QMainWindow):
     def _reload_canvas_ann(self, ann: ImageAnnotation):
         if not self.project:
             return
-        import cv2
-        img = cv2.imread(ann.image_path)
-        if img is not None:
-            ann.image_height, ann.image_width = img.shape[:2]
+        try:
+            from PIL import Image as PILImage
+            with PILImage.open(ann.image_path) as _img:
+                ann.image_width, ann.image_height = _img.size
+        except Exception:
+            pass
 
         if self.project.border_rect:
             self.canvas.set_border_rect(tuple(self.project.border_rect))

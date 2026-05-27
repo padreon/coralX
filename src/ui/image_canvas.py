@@ -1,8 +1,6 @@
 from PyQt6.QtWidgets import QWidget, QMenu
 from PyQt6.QtCore import Qt, QPoint, QTimer, pyqtSignal
 from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QFont, QTransform
-import cv2
-
 from src.models.project import Point, ImageAnnotation
 
 POINT_RADIUS = 8
@@ -48,14 +46,16 @@ class ImageCanvas(QWidget):
     def load_image(self, annotation: ImageAnnotation, coral_codes: dict):
         self._annotation = annotation
         self._coral_codes = coral_codes
-        img = cv2.imread(annotation.image_path)
-        if img is None:
+        from PIL import Image as PILImage
+        try:
+            pil_img = PILImage.open(annotation.image_path).convert("RGB")
+        except Exception:
             self.status_message.emit(f"Cannot load: {annotation.image_path}")
             return
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        h, w, ch = img_rgb.shape
+        w, h = pil_img.size
+        data = pil_img.tobytes("raw", "RGB")
         from PyQt6.QtGui import QImage
-        qimg = QImage(bytes(img_rgb.data), w, h, ch * w, QImage.Format.Format_RGB888)
+        qimg = QImage(data, w, h, w * 3, QImage.Format.Format_RGB888)
         self._pixmap = QPixmap.fromImage(qimg)
         self._zoom = 1.0
         self._offset = QPoint(0, 0)

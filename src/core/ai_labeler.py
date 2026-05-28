@@ -1,3 +1,4 @@
+"""AI auto-labeling via YOLOv8 classification or detection models."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -8,21 +9,26 @@ import numpy as np
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
+try:
+    from ultralytics import YOLO  # type: ignore[import]
+    _YOLO_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    YOLO = None  # type: ignore[assignment,misc]
+    _YOLO_AVAILABLE = False
+
 if TYPE_CHECKING:
     from src.models.project import ImageAnnotation
 
+
 def yolo_available() -> bool:
-    """Return True if ultralytics is importable (checked fresh each call)."""
-    try:
-        import ultralytics  # pylint: disable=import-outside-toplevel
-        _ = ultralytics.__version__
-        return True
-    except ImportError:
-        return False
+    """Return True if ultralytics is importable."""
+    return _YOLO_AVAILABLE
 
 
 @dataclass
 class LabelResult:
+    """Stores the AI prediction result for a single point."""
+
     annotation_path: str
     point_index: int
     predicted_class: str
@@ -34,16 +40,20 @@ class AILabeler:
     """Wraps a YOLOv8 classification or detection model for per-point coral code prediction."""
 
     def __init__(self, model_path: str) -> None:
-        from ultralytics import YOLO
+        """Load the YOLO model from *model_path*."""
+        if YOLO is None:
+            raise ImportError("ultralytics is not installed. Run: pip install ultralytics")
         self._model = YOLO(model_path)
         self._class_names: dict[int, str] = self._model.names
         self._task: str = getattr(self._model, "task", "classify") or "classify"
 
     @property
     def task(self) -> str:
+        """Return the model task string (e.g. 'classify' or 'detect')."""
         return self._task
 
     def class_names(self) -> list[str]:
+        """Return the list of class name strings from the loaded model."""
         return list(self._class_names.values())
 
     def _crop_around(
@@ -74,6 +84,7 @@ class AILabeler:
         y: float,
         crop_size: int = 64,
     ) -> tuple[str, float]:
+        """Return (class_name, confidence) for the image region around (x, y)."""
         if self._task == "classify":
             return self._predict_classify(image, x, y, crop_size)
         return self._predict_detect(image, x, y, crop_size)
@@ -124,6 +135,7 @@ class AILabeler:
         class_names: list[str],
         coral_codes: dict[str, str],
     ) -> dict[str, str | None]:
+        """Return a best-guess {class_name: coral_code} mapping based on name matching."""
         mapping: dict[str, str | None] = {}
         for cls in class_names:
             matched: str | None = None
@@ -137,6 +149,8 @@ class AILabeler:
 
 
 class AILabelWorker(QThread):
+    """Background thread that runs AILabeler over all annotation points."""
+
     progress = pyqtSignal(int, int, str)
     result_ready = pyqtSignal(list)
     error = pyqtSignal(str)
@@ -152,6 +166,7 @@ class AILabelWorker(QThread):
         overwrite_labeled: bool,
         parent=None,
     ) -> None:
+        """Initialise the worker with labeling parameters."""
         super().__init__(parent)
         self._labeler = labeler
         self._annotations = annotations
@@ -162,9 +177,11 @@ class AILabelWorker(QThread):
         self._cancelled = False
 
     def cancel(self) -> None:
+        """Request cancellation; the run loop checks this flag between points."""
         self._cancelled = True
 
     def run(self) -> None:
+        """Run the labeling loop, emitting progress and results signals."""
         results: list[LabelResult] = []
         total = sum(
             len([p for p in a.points if self._overwrite_labeled or p.label is None])

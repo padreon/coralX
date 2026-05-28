@@ -11,11 +11,14 @@ from PyQt6.QtCore import QThread, pyqtSignal
 if TYPE_CHECKING:
     from src.models.project import ImageAnnotation
 
-try:
-    from ultralytics import YOLO as _YOLO  # noqa: F401
-    YOLO_AVAILABLE = True
-except ImportError:
-    YOLO_AVAILABLE = False
+def yolo_available() -> bool:
+    """Return True if ultralytics is importable (checked fresh each call)."""
+    try:
+        import ultralytics  # pylint: disable=import-outside-toplevel
+        _ = ultralytics.__version__
+        return True
+    except ImportError:
+        return False
 
 
 @dataclass

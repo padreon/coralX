@@ -123,8 +123,12 @@ class AILabelDialog(QDialog):
         # --- Class mapping group ---
         mapping_box = QGroupBox("Class Mapping")
         mapping_layout = QVBoxLayout(mapping_box)
+        self._hint_label = QLabel("Click \"Load Model & Detect Classes\" to populate this table.")
+        self._hint_label.setStyleSheet("color: gray; font-style: italic;")
+        mapping_layout.addWidget(self._hint_label)
         self._mapping_table = ClassMappingTable(project.coral_codes)
         self._mapping_table.setMinimumHeight(120)
+        self._mapping_table.hide()
         mapping_layout.addWidget(self._mapping_table)
         load_btn = QPushButton("Load Model & Detect Classes")
         load_btn.clicked.connect(self._load_model)
@@ -150,8 +154,8 @@ class AILabelDialog(QDialog):
             self._model_path_edit.setText(path)
 
     def _load_model(self) -> None:
-        from src.core.ai_labeler import YOLO_AVAILABLE, AILabeler
-        if not YOLO_AVAILABLE:
+        from src.core.ai_labeler import yolo_available, AILabeler  # pylint: disable=import-outside-toplevel
+        if not yolo_available():
             QMessageBox.warning(
                 self, "ultralytics not installed",
                 "The ultralytics package is not installed.\n\n"
@@ -171,6 +175,8 @@ class AILabelDialog(QDialog):
                 labeler.class_names(), self._project.coral_codes
             )
             self._mapping_table.populate(suggestions)
+            self._hint_label.hide()
+            self._mapping_table.show()
             self._labeler = labeler
             self._run_btn.setEnabled(True)
             task_label = "detection" if labeler.task == "detect" else "classification"

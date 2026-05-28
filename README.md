@@ -4,6 +4,8 @@
 
 Built with Python, PyQt6, and OpenCV.
 
+→ **[User Guide](docs/user-guide.md)** · **[Contributing](docs/contributing.md)**
+
 ---
 
 ## Why coralX?
@@ -18,6 +20,7 @@ CPCe is the de facto standard tool for benthic point count analysis, but it was 
 | Diversity indices | Manual calculation | Auto-calculated (Shannon H', Simpson 1-D) |
 | Image zoom | Basic | Smooth scroll-to-zoom + pan |
 | Project format | Proprietary | Open JSON (`.cpce`) |
+| AI auto-label | No | Yes — YOLOv8 per-point prediction |
 
 ---
 
@@ -32,6 +35,7 @@ CPCe is the de facto standard tool for benthic point count analysis, but it was 
 - Export to CSV or multi-sheet Excel (Summary / Per Image / Raw Points)
 - Import existing CPCe projects and labeled data
 - Save/load projects as portable `.cpce` JSON files
+- **AI auto-label** — run a YOLOv8 classification model to automatically label points
 
 ---
 
@@ -63,17 +67,7 @@ python -m src.main
 3. Open port **6080** in your browser (password: `coral`) — this is the noVNC desktop
 4. In the terminal, run `python -m src.main`
 
----
-
-## Usage
-
-1. **New Project** → `File > New Project`
-2. **Add Images** → `File > Add Images` (JPG, PNG, TIFF supported)
-3. **Configure points** → set count, distribution method, and border exclusion in the left panel
-4. **Generate Points** → click `Generate Points` in the toolbar
-5. **Label Points** → click any point on the image → select a coral code from the menu
-   - Arrow keys cycle through points; **Enter** opens the label menu for the selected point
-6. **Export** → `File > Export CSV` or `File > Export Excel`
+For the full walkthrough, see the **[User Guide](docs/user-guide.md)**.
 
 ---
 
@@ -86,6 +80,7 @@ coralX/
 │   ├── ui/
 │   │   ├── main_window.py         # App shell, menus, panels, file I/O
 │   │   ├── image_canvas.py        # Image viewer with point overlay
+│   │   ├── ai_label_dialog.py     # AI auto-label dialog + progress
 │   │   ├── import_dialogs.py      # CPCe import UI
 │   │   └── calibration_dialog.py  # Image calibration
 │   ├── core/
@@ -93,13 +88,20 @@ coralX/
 │   │   ├── statistics.py          # Coverage %, Shannon H', Simpson 1-D
 │   │   ├── exporter.py            # CSV and Excel export
 │   │   ├── importer.py            # CPCe / CSV import
+│   │   ├── ai_labeler.py          # YOLOv8 wrapper + background worker
 │   │   └── analysis.py            # Data analysis helpers
 │   └── models/
 │       └── project.py             # Data models (Project, Station, ImageAnnotation, Point)
 ├── data/
-│   └── coral_codes_default.json   # 12 standard benthic codes
-├── .devcontainer/
-│   └── devcontainer.json          # GitHub Codespaces config
+│   ├── coral_codes_default.json   # Default benthic codes (COREMAP standard)
+│   └── data-training.pt           # Pre-trained coral morphology classifier (7 classes)
+├── tools/
+│   ├── prepare_and_train.py       # Download Roboflow dataset + train YOLOv8 classifier
+│   ├── train_colab.ipynb          # Google Colab notebook for training with augmentation
+│   └── training_config.yaml.example
+├── docs/
+│   ├── user-guide.md              # Step-by-step guide for end users
+│   └── contributing.md            # Developer setup and contribution guide
 └── requirements.txt
 ```
 
@@ -114,18 +116,7 @@ coralX/
 | NumPy | Point generation and statistics |
 | Pandas | Data aggregation and export |
 | openpyxl | Excel file generation |
-
----
-
-## Contributing
-
-Contributions are welcome. To get started:
-
-1. Fork the repo and create a feature branch
-2. Make your changes — type hints required on all functions
-3. Open a pull request with a clear description of what changed and why
-
-For larger changes, open an issue first to discuss the approach.
+| ultralytics *(optional)* | YOLOv8 AI auto-label |
 
 ---
 
@@ -140,7 +131,13 @@ For larger changes, open an issue first to discuss the approach.
 - [ ] Image calibration (click two points → real-world distance)
 - [ ] Area measurement (trace outline → compute area)
 - [ ] Image filter/sort (show only incomplete)
-- [ ] AI auto-label via YOLOv8 per-point prediction
+- [x] AI auto-label via YOLOv8 per-point prediction
+
+---
+
+## Contributing
+
+See **[docs/contributing.md](docs/contributing.md)** for the full guide.
 
 ---
 

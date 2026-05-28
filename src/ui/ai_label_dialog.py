@@ -74,6 +74,7 @@ class AILabelDialog(QDialog):
         self._model_path_edit = QLineEdit()
         self._model_path_edit.setPlaceholderText("Path to YOLOv8 .pt classification model…")
         self._model_path_edit.setText(settings.value(_SETTINGS_KEY_MODEL, ""))
+        self._model_path_edit.returnPressed.connect(self._load_model)
         path_row.addWidget(self._model_path_edit)
         browse_btn = QPushButton("Browse…")
         browse_btn.clicked.connect(self._browse_model)
@@ -123,16 +124,16 @@ class AILabelDialog(QDialog):
         # --- Class mapping group ---
         mapping_box = QGroupBox("Class Mapping")
         mapping_layout = QVBoxLayout(mapping_box)
-        self._hint_label = QLabel("Click \"Load Model & Detect Classes\" to populate this table.")
+        self._hint_label = QLabel("Select a .pt model file above to populate this table.")
         self._hint_label.setStyleSheet("color: gray; font-style: italic;")
         mapping_layout.addWidget(self._hint_label)
         self._mapping_table = ClassMappingTable(project.coral_codes)
         self._mapping_table.setMinimumHeight(120)
         self._mapping_table.hide()
         mapping_layout.addWidget(self._mapping_table)
-        load_btn = QPushButton("Load Model & Detect Classes")
-        load_btn.clicked.connect(self._load_model)
-        mapping_layout.addWidget(load_btn)
+        reload_btn = QPushButton("Reload Model")
+        reload_btn.clicked.connect(self._load_model)
+        mapping_layout.addWidget(reload_btn)
         layout.addWidget(mapping_box)
 
         # --- Buttons ---
@@ -146,12 +147,17 @@ class AILabelDialog(QDialog):
         self._btn_box.rejected.connect(self.reject)
         layout.addWidget(self._btn_box)
 
+        # Auto-load saved model path on open
+        if self._model_path_edit.text().strip():
+            self._load_model()
+
     def _browse_model(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "Select YOLOv8 Model", "", "YOLO model (*.pt)"
         )
         if path:
             self._model_path_edit.setText(path)
+            self._load_model()
 
     def _load_model(self) -> None:
         from src.core.ai_labeler import yolo_available, AILabeler  # pylint: disable=import-outside-toplevel

@@ -129,7 +129,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,  # set to "assets/icon.ico" (Win) or "assets/icon.icns" (mac)
+    icon=str(ROOT / "assets" / ("icon.icns" if sys.platform == "darwin" else "icon.ico")),
 )
 
 coll = COLLECT(
@@ -147,7 +147,7 @@ if sys.platform == "darwin":
     app = BUNDLE(
         coll,
         name="coralX.app",
-        icon=None,
+        icon=str(ROOT / "assets" / "icon.icns"),
         bundle_identifier="com.coralx.app",
         info_plist={
             "NSHighResolutionCapable": True,

@@ -168,18 +168,7 @@ A progress dialog shows each point being processed. You can cancel at any time.
 
 ### Training your own model
 
-If you have your own coral image dataset (e.g. from [Roboflow](https://universe.roboflow.com)), you can train a custom model:
-
-1. Copy `tools/training_config.yaml.example` to `tools/training_config.yaml`
-2. Fill in your Roboflow API key, workspace, and project details
-3. Run:
-   ```bash
-   pip install roboflow ultralytics pyyaml
-   python tools/prepare_and_train.py
-   ```
-4. The trained model is saved to `runs/classify/coral_classifier/weights/best.pt`
-
-For GPU-accelerated training (much faster), use the included Google Colab notebook: `tools/train_colab.ipynb`.
+See the full **[Training Guide](training-guide.md)** for step-by-step instructions including Roboflow dataset setup, Google Colab training (free GPU), and local training.
 
 ---
 

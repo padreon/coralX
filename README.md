@@ -4,7 +4,7 @@
 
 Built with Python, PyQt6, and OpenCV.
 
-→ **[User Guide](docs/user-guide.md)** · **[Contributing](docs/contributing.md)**
+→ **[User Guide](docs/user-guide.md)** · **[Training Guide](docs/training-guide.md)** · **[Contributing](docs/contributing.md)**
 
 ---
 

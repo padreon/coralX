@@ -78,7 +78,7 @@ def export_excel(project: Project, output_path: str) -> str:
         ]
 
     # Group coverage sheet: one row per station + project total
-    grp_rows: list[dict] = []
+    grp_sheet_rows: list[dict] = []
     all_grp_names: set[str] = set()
     for station in project.stations:
         from src.core.statistics import station_summary
@@ -87,12 +87,12 @@ def export_excel(project: Project, output_path: str) -> str:
         all_grp_names.update(grp_cov.keys())
         row: dict = {"station": station.name}
         row.update(grp_cov)
-        grp_rows.append(row)
+        grp_sheet_rows.append(row)
     # Project total row
     if summary.get("group_coverage"):
         total_row: dict = {"station": "PROJECT TOTAL"}
         total_row.update(summary["group_coverage"])
-        grp_rows.append(total_row)
+        grp_sheet_rows.append(total_row)
 
     # Cover area sheet (only for calibrated annotations)
     cover_rows: list[dict] = []
@@ -129,7 +129,7 @@ def export_excel(project: Project, output_path: str) -> str:
         if grp_rows:
             pd.DataFrame(grp_rows).to_excel(
                 writer, sheet_name="Summary", index=False, startrow=row_cursor)
-        pd.DataFrame(grp_rows).fillna(0).to_excel(writer, sheet_name="Group Coverage", index=False)
+        pd.DataFrame(grp_sheet_rows).fillna(0).to_excel(writer, sheet_name="Group Coverage", index=False)
         pd.DataFrame(per_station).fillna(0).to_excel(writer, sheet_name="Per Station", index=False)
         pd.DataFrame(per_image).fillna(0).to_excel(writer, sheet_name="Per Image", index=False)
         pd.DataFrame(stats_rows).to_excel(writer, sheet_name="Statistics", index=False)

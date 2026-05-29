@@ -77,22 +77,30 @@ jobs:
           sips -z 512 512 assets/icon_256.png --out assets/icon.iconset/icon_256x256@2x.png
           iconutil -c icns assets/icon.iconset -o assets/icon.icns
 
-      # ── PyInstaller ────────────────────────────────────────────────────
-      - name: Build with PyInstaller
+      # ── PyInstaller — base build (no AI) ──────────────────────────────
+      - name: Build with PyInstaller (base)
         run: pyinstaller coralx.spec --noconfirm
 
-      - name: Show build size
+      # ── PyInstaller — AI bundle ────────────────────────────────────────
+      - name: Install AI dependencies
+        run: pip install "ultralytics>=8.0.0"
+
+      - name: Build with PyInstaller (AI bundle)
+        run: pyinstaller coralx-ai.spec --noconfirm
+
+      - name: Show build sizes
         shell: bash
         run: du -sh dist/coralX* 2>/dev/null || true
 
-      # ── Windows: Inno Setup installer (.exe) ───────────────────────────
+      # ── Windows: Inno Setup installers ────────────────────────────────
       - name: Create installer (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           iscc /DAppVersion="${{ steps.version.outputs.version }}" installer\windows.iss
+          iscc /DAppVersion="${{ steps.version.outputs.version }}" installer\windows-ai.iss
 
-      # ── macOS: DMG with drag-to-Applications ───────────────────────────
+      # ── macOS: DMGs ───────────────────────────────────────────────────
       - name: Create DMG (macOS)
         if: runner.os == 'macOS'
         run: |
@@ -106,10 +114,21 @@ jobs:
             --hide-extension "coralX.app" \
             --app-drop-link 425 190 \
             "coralX-mac.dmg" \
-            "dist/"
+            "dist/coralX.app"
+          create-dmg \
+            --volname "coralX AI" \
+            --volicon "assets/icon.icns" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "coralX-ai.app" 175 190 \
+            --hide-extension "coralX-ai.app" \
+            --app-drop-link 425 190 \
+            "coralX-mac-ai.dmg" \
+            "dist/coralX-ai.app"
 
-      # ── Linux: AppImage ────────────────────────────────────────────────
-      - name: Create AppImage (Linux)
+      # ── Linux: AppImages ──────────────────────────────────────────────
+      - name: Create AppImages (Linux)
         if: runner.os == 'Linux'
         run: |
           wget -q -O appimagetool.AppImage \
@@ -122,9 +141,17 @@ jobs:
           chmod +x AppDir/AppRun
           cp installer/coralx.desktop AppDir/
           cp assets/icon_256.png AppDir/coralX.png
-
           APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 \
             ./appimagetool.AppImage AppDir coralX-linux.AppImage
+
+          mkdir -p AppDir-ai
+          cp -r dist/coralX-ai/. AppDir-ai/
+          cp installer/AppRun AppDir-ai/AppRun
+          chmod +x AppDir-ai/AppRun
+          cp installer/coralx.desktop AppDir-ai/
+          cp assets/icon_256.png AppDir-ai/coralX.png
+          APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 \
+            ./appimagetool.AppImage AppDir-ai coralX-linux-ai.AppImage
 
       # ── Upload artifacts ───────────────────────────────────────────────
       - name: Upload artifact (Windows)
@@ -135,6 +162,14 @@ jobs:
           path: coralX-windows-setup.exe
           retention-days: 7
 
+      - name: Upload artifact (Windows AI)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coralX-windows-setup-ai.exe
+          path: coralX-windows-setup-ai.exe
+          retention-days: 7
+
       - name: Upload artifact (macOS)
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
@@ -143,12 +178,28 @@ jobs:
           path: coralX-mac.dmg
           retention-days: 7
 
+      - name: Upload artifact (macOS AI)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coralX-mac-ai.dmg
+          path: coralX-mac-ai.dmg
+          retention-days: 7
+
       - name: Upload artifact (Linux)
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: coralX-linux.AppImage
           path: coralX-linux.AppImage
+          retention-days: 7
+
+      - name: Upload artifact (Linux AI)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coralX-linux-ai.AppImage
+          path: coralX-linux-ai.AppImage
           retention-days: 7
 
   # ── GitHub Release (tag-triggered only) ─────────────────────────────────
@@ -176,16 +227,23 @@ jobs:
 
             ### Download
 
-            | Platform | File | How to install |
-            |---|---|---|
-            | Windows | `coralX-windows-setup.exe` | Run installer → follow wizard → launch from Start Menu |
-            | macOS | `coralX-mac.dmg` | Open DMG → drag coralX to Applications |
-            | Linux | `coralX-linux.AppImage` | `chmod +x coralX-linux.AppImage` → double-click or run directly |
+            Pick the build that fits your needs:
+
+            | | Windows | macOS | Linux |
+            |---|---|---|---|
+            | **Base** (~80–100 MB) | `coralX-windows-setup.exe` | `coralX-mac.dmg` | `coralX-linux.AppImage` |
+            | **AI bundle** (~500–700 MB) | `coralX-windows-setup-ai.exe` | `coralX-mac-ai.dmg` | `coralX-linux-ai.AppImage` |
+
+            **Base** — coral point-count app, no AI. To enable AI auto-label later: `pip install ultralytics>=8.0.0`
+
+            **AI bundle** — includes PyTorch + ultralytics. AI auto-label works offline, no extra install needed.
+
+            #### Install instructions
+            - **Windows:** Run the `.exe` → follow the wizard → launch from Start Menu
+            - **macOS:** Open the `.dmg` → drag coralX to Applications
+            - **Linux:** `chmod +x coralX-linux*.AppImage` → double-click or run directly
 
             > **macOS:** First launch may require right-clicking → Open to bypass Gatekeeper (app is unsigned).
-            >
-            > **AI auto-label** is not bundled to keep the download small.
-            > To enable it after installing: `pip install ultralytics>=8.0.0`
           files: artifacts/*
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

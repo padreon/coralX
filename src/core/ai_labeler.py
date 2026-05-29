@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
-from ultralytics import YOLO  # type: ignore[import]
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -30,6 +29,7 @@ class AILabeler:
 
     def __init__(self, model_path: str) -> None:
         """Load the YOLO model from *model_path*."""
+        from ultralytics import YOLO  # type: ignore[import]  # noqa: PLC0415
         self._model = YOLO(model_path)
         self._class_names: dict[int, str] = self._model.names
         self._task: str = getattr(self._model, "task", "classify") or "classify"

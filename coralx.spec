@@ -76,7 +76,7 @@ a = Analysis(
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=["installer/pyi_rth_torch.py"],
     excludes=[
         # Qt modules not used by coralX
         "PyQt6.QtWebEngine", "PyQt6.QtWebEngineWidgets", "PyQt6.QtWebEngineCore",

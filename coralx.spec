@@ -1,19 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec for coralX.
+PyInstaller spec for coralX (includes ultralytics + PyTorch for AI auto-label).
 
 Build:
-    pip install pyinstaller
+    pip install pyinstaller "ultralytics>=8.0.0"
     pyinstaller coralx.spec
 
 Output:
     dist/coralX/         (Linux / macOS)
     dist/coralX/         (Windows — contains coralX.exe)
 
-Expected sizes after optimization:
-    Windows:  ~80–100 MB  (down from ~338 MB)
-    macOS:    ~70–90 MB
-    Linux:    ~70–90 MB
+Expected sizes (uncompressed):
+    Windows:  ~1.5–2 GB  (Inno Setup LZMA2 compresses installer to ~500–700 MB)
+    macOS:    ~1.2–1.6 GB
+    Linux:    ~1.2–1.6 GB
 """
 
 import sys
@@ -24,16 +24,17 @@ ROOT = Path(SPECPATH)
 block_cipher = None
 
 # ---------------------------------------------------------------------------
+# Collect ultralytics and its data files / hidden imports
+# ---------------------------------------------------------------------------
+try:
+    from PyInstaller.utils.hooks import collect_all
+    _ult_datas, _ult_binaries, _ult_hiddenimports = collect_all("ultralytics")
+except Exception:
+    _ult_datas, _ult_binaries, _ult_hiddenimports = [], [], []
+
+# ---------------------------------------------------------------------------
 # Qt modules coralX does NOT use — excluding these cuts ~150–200 MB
 # ---------------------------------------------------------------------------
-_EXCLUDED_TORCH = [
-    # PyTorch native DLLs — excluded because ultralytics/torch are optional
-    # and UPX compression corrupts them, causing WinError 1114 at runtime.
-    "c10", "torch", "libtorch", "fbgemm", "asmjit",
-    "torch_cpu", "torch_cuda", "torch_python",
-    "caffe2", "shm", "libgomp",
-]
-
 _EXCLUDED_QT = [
     "Qt6WebEngine", "Qt6WebEngineCore", "Qt6WebEngineWidgets",
     "Qt6WebEngineQuick", "Qt6WebView",
@@ -62,14 +63,16 @@ _EXCLUDED_QT = [
 a = Analysis(
     [str(ROOT / "src" / "main.py")],
     pathex=[str(ROOT)],
-    binaries=[],
+    binaries=[*_ult_binaries],
     datas=[
         (str(ROOT / "data" / "coral_codes_default.json"), "data"),
         (str(ROOT / "data" / "data-training.pt"),         "data"),
+        *_ult_datas,
     ],
     hiddenimports=[
         "PyQt6.QtPrintSupport",
         "PyQt6.sip",
+        *_ult_hiddenimports,
     ],
     hookspath=[],
     hooksconfig={},
@@ -87,8 +90,6 @@ a = Analysis(
         "PyQt6.QtCharts",
         "PyQt6.QtDataVisualization",
         "PyQt6.Qt3DCore", "PyQt6.Qt3DRender",
-        # AI / ML stack — optional, user installs separately
-        "ultralytics", "torch", "torchvision", "torchaudio",
         # Dev tools
         "ruff", "mypy", "pylint",
         # Unused scientific stack
@@ -99,6 +100,7 @@ a = Analysis(
         "scipy.io", "scipy.signal",
         "scipy.integrate", "scipy.interpolate", "scipy.linalg",
         "scipy.fft", "scipy.ndimage",
+        # NOTE: torch / ultralytics are intentionally NOT excluded here
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -106,21 +108,11 @@ a = Analysis(
     noarchive=False,
 )
 
-# ---------------------------------------------------------------------------
-# Strip unused Qt shared libraries from the collected binaries
-# This is the most effective size reduction step (~150 MB on Windows)
-# ---------------------------------------------------------------------------
-def _should_exclude(name: str) -> bool:
-    name_lower = name.lower()
-    return (
-        any(excl.lower() in name_lower for excl in _EXCLUDED_QT)
-        or any(excl.lower() in name_lower for excl in _EXCLUDED_TORCH)
-    )
-
+# Strip unused Qt shared libraries only (keep all torch/ultralytics binaries)
 a.binaries = [
     (name, path, typecode)
     for name, path, typecode in a.binaries
-    if not _should_exclude(name)
+    if not any(excl.lower() in name.lower() for excl in _EXCLUDED_QT)
 ]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
@@ -133,8 +125,8 @@ exe = EXE(
     name="coralX",
     debug=False,
     bootloader_ignore_signals=False,
-    strip=sys.platform != "win32",  # strip debug symbols on Linux/macOS
-    upx=True,
+    strip=sys.platform != "win32",
+    upx=False,  # UPX disabled — corrupts PyTorch DLLs (WinError 1114)
     console=False,
     disable_windowed_traceback=False,
     target_arch=None,
@@ -149,8 +141,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=sys.platform != "win32",
-    upx=True,
-    upx_exclude=["vcruntime140.dll", "python3*.dll", "c10.dll", "torch*.dll", "fbgemm.dll"],
+    upx=False,  # UPX disabled — corrupts PyTorch DLLs (WinError 1114)
     name="coralX",
 )
 

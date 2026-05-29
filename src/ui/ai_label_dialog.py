@@ -160,15 +160,7 @@ class AILabelDialog(QDialog):
             self._load_model()
 
     def _load_model(self) -> None:
-        from src.core.ai_labeler import yolo_available, AILabeler  # pylint: disable=import-outside-toplevel
-        if not yolo_available():
-            QMessageBox.warning(
-                self, "ultralytics not installed",
-                "The ultralytics package is not installed.\n\n"
-                "Install it with:\n    pip install ultralytics>=8.0.0\n\n"
-                "Then restart coralX.",
-            )
-            return
+        from src.core.ai_labeler import AILabeler  # pylint: disable=import-outside-toplevel
 
         path = self._model_path_edit.text().strip()
         if not path:

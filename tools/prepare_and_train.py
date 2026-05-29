@@ -46,6 +46,7 @@ def load_config(path: Path) -> dict:
     raw = yaml.safe_load(path.read_text()) or {}
     rf = raw.get("roboflow", {})
     tr = raw.get("training", {})
+    aug = raw.get("augmentation", {})
     return {
         "api_key":    rf.get("api_key", ""),
         "workspace":  rf.get("workspace", ""),
@@ -56,6 +57,13 @@ def load_config(path: Path) -> dict:
         "batch":      tr.get("batch", 32),
         "base_model": tr.get("base_model", "yolov8n-cls.pt"),
         "work_dir":   tr.get("work_dir", "training_data"),
+        "aug_fliplr":  aug.get("fliplr",  0.5),
+        "aug_flipud":  aug.get("flipud",  0.3),
+        "aug_degrees": aug.get("degrees", 15.0),
+        "aug_hsv_h":   aug.get("hsv_h",   0.015),
+        "aug_hsv_s":   aug.get("hsv_s",   0.4),
+        "aug_hsv_v":   aug.get("hsv_v",   0.3),
+        "aug_blur":    aug.get("blur",    0.1),
     }
 
 
@@ -194,6 +202,13 @@ def train(
     imgsz: int,
     batch: int,
     base_model: str,
+    aug_fliplr: float,
+    aug_flipud: float,
+    aug_degrees: float,
+    aug_hsv_h: float,
+    aug_hsv_s: float,
+    aug_hsv_v: float,
+    aug_blur: float,
 ) -> Path:
     """Train a YOLOv8 classification model and return the path to best.pt."""
     try:
@@ -211,6 +226,14 @@ def train(
         batch=batch,
         name="coral_classifier",
         exist_ok=True,
+        # Augmentation — tuned for underwater coral imagery
+        fliplr=aug_fliplr,
+        flipud=aug_flipud,
+        degrees=aug_degrees,
+        hsv_h=aug_hsv_h,
+        hsv_s=aug_hsv_s,
+        hsv_v=aug_hsv_v,
+        blur=aug_blur,
     )
     best = Path("runs/classify/coral_classifier/weights/best.pt")
     if best.exists():
@@ -238,10 +261,17 @@ def _parse_args(cfg: dict) -> argparse.Namespace:
     p.add_argument("--project",    default=cfg.get("project"),    help="Roboflow project slug")
     p.add_argument("--version",    default=cfg.get("version", 1), type=int)
     p.add_argument("--work-dir",   default=cfg.get("work_dir", "training_data"))
-    p.add_argument("--epochs",     default=cfg.get("epochs", 100), type=int)
-    p.add_argument("--imgsz",      default=cfg.get("imgsz", 64),   type=int)
-    p.add_argument("--batch",      default=cfg.get("batch", 32),   type=int)
+    p.add_argument("--epochs",     default=cfg.get("epochs", 100),      type=int)
+    p.add_argument("--imgsz",      default=cfg.get("imgsz", 64),        type=int)
+    p.add_argument("--batch",      default=cfg.get("batch", 32),        type=int)
     p.add_argument("--base-model", default=cfg.get("base_model", "yolov8n-cls.pt"))
+    p.add_argument("--aug-fliplr",  default=cfg.get("aug_fliplr",  0.5),  type=float)
+    p.add_argument("--aug-flipud",  default=cfg.get("aug_flipud",  0.3),  type=float)
+    p.add_argument("--aug-degrees", default=cfg.get("aug_degrees", 15.0), type=float)
+    p.add_argument("--aug-hsv-h",   default=cfg.get("aug_hsv_h",   0.015),type=float)
+    p.add_argument("--aug-hsv-s",   default=cfg.get("aug_hsv_s",   0.4),  type=float)
+    p.add_argument("--aug-hsv-v",   default=cfg.get("aug_hsv_v",   0.3),  type=float)
+    p.add_argument("--aug-blur",    default=cfg.get("aug_blur",    0.1),  type=float)
     p.add_argument("--skip-download", action="store_true")
     p.add_argument("--skip-crop",     action="store_true")
     return p.parse_args()
@@ -279,7 +309,20 @@ def main() -> None:
     else:
         print(f"Using existing crops: {cls_dir}")
 
-    train(cls_dir, args.epochs, args.imgsz, args.batch, args.base_model)
+    train(
+        cls_dir,
+        args.epochs,
+        args.imgsz,
+        args.batch,
+        args.base_model,
+        aug_fliplr=args.aug_fliplr,
+        aug_flipud=args.aug_flipud,
+        aug_degrees=args.aug_degrees,
+        aug_hsv_h=args.aug_hsv_h,
+        aug_hsv_s=args.aug_hsv_s,
+        aug_hsv_v=args.aug_hsv_v,
+        aug_blur=args.aug_blur,
+    )
 
 
 if __name__ == "__main__":

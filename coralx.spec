@@ -16,6 +16,7 @@ Expected sizes (uncompressed):
     Linux:    ~1.2–1.6 GB
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -31,6 +32,24 @@ try:
     _ult_datas, _ult_binaries, _ult_hiddenimports = collect_all("ultralytics")
 except Exception:
     _ult_datas, _ult_binaries, _ult_hiddenimports = [], [], []
+
+# ---------------------------------------------------------------------------
+# Copy torch DLLs to bundle root on Windows.
+# Windows DLL search order checks the exe directory first, so placing
+# c10.dll / fbgemm.dll / etc. at the root avoids WinError 1114 without
+# needing os.add_dll_directory() or PATH tricks at runtime.
+# ---------------------------------------------------------------------------
+_torch_dlls: list = []
+if sys.platform == "win32":
+    try:
+        import torch as _torch
+        _torch_lib = Path(_torch.__file__).parent / "lib"
+        _torch_dlls = [
+            (str(dll), ".")
+            for dll in _torch_lib.glob("*.dll")
+        ]
+    except Exception:
+        pass
 
 # ---------------------------------------------------------------------------
 # Qt modules coralX does NOT use — excluding these cuts ~150–200 MB
@@ -63,7 +82,7 @@ _EXCLUDED_QT = [
 a = Analysis(
     [str(ROOT / "src" / "main.py")],
     pathex=[str(ROOT)],
-    binaries=[*_ult_binaries],
+    binaries=[*_ult_binaries, *_torch_dlls],
     datas=[
         (str(ROOT / "data" / "coral_codes_default.json"), "data"),
         (str(ROOT / "data" / "data-training.pt"),         "data"),

@@ -38,6 +38,10 @@ jobs:
           cache: pip
 
       # ── System tools ───────────────────────────────────────────────────
+      - name: Install Inno Setup (Windows)
+        if: runner.os == 'Windows'
+        run: choco install innosetup --yes --no-progress
+
       - name: Install create-dmg (macOS)
         if: runner.os == 'macOS'
         run: brew install create-dmg
@@ -85,7 +89,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          iscc /DAppVersion="${{ steps.version.outputs.version }}" /O"." installer\windows.iss
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & $iscc /DAppVersion="${{ steps.version.outputs.version }}" /O"." installer\windows.iss
           if (-not (Test-Path "coralX-windows-setup.exe")) {
             Write-Error "coralX-windows-setup.exe not found after iscc"
             exit 1

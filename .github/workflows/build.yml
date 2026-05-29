@@ -84,7 +84,12 @@ jobs:
       - name: Create installer (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: iscc /DAppVersion="${{ steps.version.outputs.version }}" installer\windows.iss
+        run: |
+          iscc /DAppVersion="${{ steps.version.outputs.version }}" /O"." installer\windows.iss
+          if (-not (Test-Path "coralX-windows-setup.exe")) {
+            Write-Error "coralX-windows-setup.exe not found after iscc"
+            exit 1
+          }
 
       # ── macOS: DMG ────────────────────────────────────────────────────
       - name: Create DMG (macOS)
@@ -126,6 +131,7 @@ jobs:
         with:
           name: coralX-windows-setup.exe
           path: coralX-windows-setup.exe
+          if-no-files-found: error
           retention-days: 7
 
       - name: Upload artifact (macOS)
@@ -134,6 +140,7 @@ jobs:
         with:
           name: coralX-mac.dmg
           path: coralX-mac.dmg
+          if-no-files-found: error
           retention-days: 7
 
       - name: Upload artifact (Linux)
@@ -142,6 +149,7 @@ jobs:
         with:
           name: coralX-linux.AppImage
           path: coralX-linux.AppImage
+          if-no-files-found: error
           retention-days: 7
 
   # ── GitHub Release (tag-triggered only) ─────────────────────────────────

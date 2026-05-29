@@ -95,8 +95,8 @@ a = Analysis(
         "matplotlib", "tkinter", "wx",
         # Notebook / IPython
         "IPython", "ipykernel", "jupyter", "nbformat",
-        # Unused scipy submodules (keep scipy.stats, scipy.spatial)
-        "scipy.io", "scipy.signal", "scipy.optimize",
+        # Unused scipy submodules (keep scipy.stats, scipy.spatial, scipy.optimize)
+        "scipy.io", "scipy.signal",
         "scipy.integrate", "scipy.interpolate", "scipy.linalg",
         "scipy.fft", "scipy.ndimage",
     ],

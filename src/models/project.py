@@ -68,6 +68,7 @@ class Project:
     point_distribution: str = "random"  # random | stratified | uniform
     border_exclusion: int = 0           # uniform pixel border to exclude
     border_rect: list | None = None     # [x_min, y_min, x_max, y_max] if set by click
+    border_polygon: list | None = None  # [[x, y], ...] if set by polygon drawing
     coral_codes: dict = field(default_factory=dict)
     coral_groups: list = field(default_factory=list)  # [{"name": str, "codes": [str]}]
     stations: list[Station] = field(default_factory=list)
@@ -85,6 +86,7 @@ class Project:
             "point_distribution": self.point_distribution,
             "border_exclusion": self.border_exclusion,
             "border_rect": self.border_rect,
+            "border_polygon": self.border_polygon,
             "coral_codes": self.coral_codes,
             "coral_groups": self.coral_groups,
             "stations": [
@@ -129,6 +131,7 @@ class Project:
             point_distribution=data["point_distribution"],
             border_exclusion=data["border_exclusion"],
             border_rect=data.get("border_rect"),
+            border_polygon=data.get("border_polygon"),
             coral_codes=data["coral_codes"],
             coral_groups=data.get("coral_groups", []),
         )

@@ -204,13 +204,16 @@ class ImageCanvas(QWidget):
         return t
 
     def _adaptive_point_r(self) -> float:
-        """Screen-space radius that shrinks when points are dense to prevent overlap."""
-        r = float(POINT_RADIUS)
+        """Screen-space radius: tapers with sqrt(zoom) so points shrink at overview
+        zoom and are full size when zoomed in; also caps by point density."""
+        # sqrt(zoom) curve: full POINT_RADIUS at zoom≥1, smooth shrink below
+        r = max(2.5, min(float(POINT_RADIUS), POINT_RADIUS * self._zoom ** 0.5))
+        # Secondary cap: prevent literal overlap when points are very dense
         ann = self._annotation
         if ann and len(ann.points) > 1 and self._pixmap:
             area = self._pixmap.width() * self._pixmap.height()
-            avg_spacing_screen = (area / len(ann.points)) ** 0.5 * self._zoom
-            r = min(r, max(2.5, avg_spacing_screen * 0.38))
+            avg_spacing = (area / len(ann.points)) ** 0.5 * self._zoom
+            r = min(r, max(2.5, avg_spacing * 0.35))
         return r
 
     def _draw_points(self, painter: QPainter):

@@ -442,7 +442,7 @@ class ImageCanvas(QWidget):
     def _hit_point(self, img_pos: QPoint) -> Point | None:
         if not self._annotation:
             return None
-        threshold = self._adaptive_point_r() / self._zoom + 2
+        threshold = (self._adaptive_point_r() + 2.0) / self._zoom
         for p in self._annotation.points:
             if abs(p.x - img_pos.x()) <= threshold and abs(p.y - img_pos.y()) <= threshold:
                 return p

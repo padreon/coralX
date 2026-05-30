@@ -103,8 +103,14 @@ class _CodesScrollArea(QScrollArea):
         w = self.widget()
         if w is None or w.layout() is None:
             return
-        vw = self.viewport().width()
-        h = w.layout().heightForWidth(vw)
+        viewport = self.viewport()
+        if viewport is None:
+            return
+        vw = viewport.width()
+        layout = w.layout()
+        if layout is None:
+            return
+        h = layout.heightForWidth(vw)
         w.setFixedSize(vw, max(h if h >= 0 else w.sizeHint().height(), 40))
 
     def resizeEvent(self, event) -> None:

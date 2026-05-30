@@ -55,7 +55,7 @@ def setup_logging(level: int = logging.DEBUG) -> None:
         fh.setLevel(logging.DEBUG)
         fh.setFormatter(fmt)
         root.addHandler(fh)
-    except Exception:  # noqa: BLE001
+    except Exception:  # pylint: disable=broad-exception-caught
         print(
             f"[coralX] WARNING: could not create log file at "
             f"{_log_dir() / 'coralX.log'} — logging to stderr only.",
@@ -111,7 +111,7 @@ def install_excepthook() -> None:
                     msg.setInformativeText(f"Full details saved to:\n{log_path()}")
                     msg.setDetailedText(tb_text)
                     msg.exec()
-            except Exception:  # noqa: BLE001
+            except Exception:  # pylint: disable=broad-exception-caught
                 pass
 
     def _hook(

@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QWidget, QMenu
 from PyQt6.QtCore import Qt, QPoint, QTimer, pyqtSignal
-from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QFont, QTransform, QPolygon
+from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QFont, QTransform, QPolygon, QImage
 import cv2
 
 from src.models.project import Point, ImageAnnotation
@@ -56,7 +56,6 @@ class ImageCanvas(QWidget):
             return
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         h, w, ch = img_rgb.shape
-        from PyQt6.QtGui import QImage
         qimg = QImage(bytes(img_rgb.data), w, h, ch * w, QImage.Format.Format_RGB888)
         self._pixmap = QPixmap.fromImage(qimg)
         self._zoom = 1.0
@@ -69,8 +68,11 @@ class ImageCanvas(QWidget):
         self._zoom = max(0.1, min(10.0, factor))
         self.update()
 
-    def zoom_in(self):  self.set_zoom(self._zoom * 1.25)
-    def zoom_out(self): self.set_zoom(self._zoom / 1.25)
+    def zoom_in(self):
+        self.set_zoom(self._zoom * 1.25)
+
+    def zoom_out(self):
+        self.set_zoom(self._zoom / 1.25)
     def zoom_fit(self):
         if self._pixmap:
             w_ratio = self.width() / self._pixmap.width()
@@ -137,7 +139,7 @@ class ImageCanvas(QWidget):
 
     # ------------------------------------------------------------------ paint
 
-    def paintEvent(self, event):
+    def paintEvent(self, event):  # pylint: disable=unused-argument
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
@@ -266,7 +268,9 @@ class ImageCanvas(QWidget):
                     required = 2 if self._border_mode == '2point' else 4
                     remaining = required - len(self._border_clicks)
                     if remaining > 0:
-                        self.status_message.emit(f"Border: {remaining} more click(s)  (ESC to cancel)")
+                        self.status_message.emit(
+                            f"Border: {remaining} more click(s)  (ESC to cancel)"
+                        )
                     else:
                         self._finish_border_drawing()
                 self.update()
@@ -303,7 +307,10 @@ class ImageCanvas(QWidget):
             hit = self._hit_point(img_pos)
             if hit:
                 label_info = f" — {hit.label}" if hit.label else " — unlabeled"
-                self.status_message.emit(f"Point #{hit.index + 1}{label_info}  |  x={int(img_pos.x())}, y={int(img_pos.y())}")
+                self.status_message.emit(
+                    f"Point #{hit.index + 1}{label_info}"
+                    f"  |  x={int(img_pos.x())}, y={int(img_pos.y())}"
+                )
             else:
                 self.status_message.emit(f"x={int(img_pos.x())}, y={int(img_pos.y())}")
 
@@ -378,21 +385,24 @@ class ImageCanvas(QWidget):
             self._clear_key_buffer()
             return
 
+        n = len(points)
         if key == Qt.Key.Key_Right:
             self._clear_key_buffer()
-            idx = (self._selected_index + 1) % len(points) if self._selected_index is not None else 0
+            idx = (self._selected_index + 1) % n if self._selected_index is not None else 0
             self.select_point(idx)
         elif key == Qt.Key.Key_Left:
             self._clear_key_buffer()
-            idx = (self._selected_index - 1) % len(points) if self._selected_index is not None else len(points) - 1
+            idx = (self._selected_index - 1) % n if self._selected_index is not None else n - 1
             self.select_point(idx)
         elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self._clear_key_buffer()
             if self._selected_index is not None:
-                self._show_label_menu(self.mapToGlobal(self.rect().center()), points[self._selected_index])
+                center = self.mapToGlobal(self.rect().center())
+                self._show_label_menu(center, points[self._selected_index])
         else:
             text = event.text().upper()
-            if text and text.isprintable() and self._coral_codes and self._selected_index is not None:
+            has_buf = text and text.isprintable()
+            if has_buf and self._coral_codes and self._selected_index is not None:
                 self._key_buffer += text
                 self._key_timer.start(700)
                 self._try_shortcut_label()

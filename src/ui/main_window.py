@@ -1,8 +1,7 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QSplitter, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QStatusBar,
-    QFileDialog, QMessageBox, QSpinBox, QComboBox, QGroupBox,
-    QProgressBar, QTableWidget, QTableWidgetItem, QToolBar, QDialog,
+    QFileDialog, QMessageBox, QSpinBox, QComboBox, QProgressBar, QTableWidget, QTableWidgetItem, QToolBar, QDialog,
     QFormLayout, QLineEdit, QDialogButtonBox, QStyledItemDelegate,
     QAbstractItemView, QAbstractItemDelegate, QCompleter, QScrollArea,
     QMenu, QCheckBox, QTextEdit, QTabWidget, QLayout, QSizePolicy,

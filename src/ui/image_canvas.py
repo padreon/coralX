@@ -294,8 +294,27 @@ class ImageCanvas(QWidget):
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
+        if delta == 0:
+            return
         factor = 1.15 if delta > 0 else 0.87
-        self.set_zoom(self._zoom * factor)
+        new_zoom = max(0.1, min(10.0, self._zoom * factor))
+        if new_zoom == self._zoom or self._pixmap is None:
+            return
+
+        # Keep the image point under the cursor fixed while zooming.
+        cursor = event.position()          # QPointF in screen space
+        inv, ok = self._build_transform().inverted()
+        if ok:
+            img = inv.map(cursor)          # cursor position in image space
+            pw, ph = self._pixmap.width(), self._pixmap.height()
+            # screen = (img - pw/2) * zoom + width/2 + offset
+            # solve for new_offset so img maps back to cursor at new_zoom:
+            self._offset = QPoint(
+                int(cursor.x() - self.width()  / 2 - (img.x() - pw / 2) * new_zoom),
+                int(cursor.y() - self.height() / 2 - (img.y() - ph / 2) * new_zoom),
+            )
+        self._zoom = new_zoom
+        self.update()
 
     def _finish_border_drawing(self):
         xs = [p.x() for p in self._border_clicks]

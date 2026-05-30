@@ -812,11 +812,11 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
-        dlg = ProgressDialog("Membuka Project…", cancellable=False, parent=self)
-        dlg.set_indeterminate("Memuat file project…")
+        dlg = ProgressDialog("Opening Project…", cancellable=False, parent=self)
+        dlg.set_indeterminate("Loading project file…")
 
         def _load(cb):
-            cb(0, 0, "Memuat file project…")
+            cb(0, 0, "Loading project file…")
             return Project.load(path)
 
         def _on_done(project):
@@ -829,13 +829,13 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(f"coralX — {project.name}")
             self._log.info("Opened project: %s", path)
             self._set_status(
-                f"Dibuka: {path}  ({len(project.stations)} stasiun, {n_img} gambar)"
+                f"Opened: {path}  ({len(project.stations)} stations, {n_img} images)"
             )
 
         def _on_error(msg):
             dlg.accept()
             self._log.error("Failed to open project: %s", path)
-            QMessageBox.critical(self, "Gagal Membuka", f"Tidak bisa membuka project:\n{msg}")
+            QMessageBox.critical(self, "Open Failed", f"Could not open project:\n{msg}")
 
         worker = WorkerThread(_load, parent=self)
         worker.progress.connect(dlg.update)
@@ -882,7 +882,7 @@ class MainWindow(QMainWindow):
         new_files = [f for f in files
                      if not any(a.image_path == f for a in self.project.annotations)]
         if not new_files:
-            self._set_status("Semua gambar sudah ada dalam project.")
+            self._set_status("All selected images are already in the project.")
             return
 
         # Read image dimensions in a background thread so the UI stays responsive
@@ -894,7 +894,7 @@ class MainWindow(QMainWindow):
             total = len(new_files)
             added: list[ImageAnnotation] = []
             for i, f in enumerate(new_files):
-                cb(i, total, f"Membaca gambar {i+1}/{total}: {os.path.basename(f)}")
+                cb(i, total, f"Reading image {i+1}/{total}: {os.path.basename(f)}")
                 ann = ImageAnnotation(image_path=f)
                 try:
                     with PILImage.open(f) as img:
@@ -902,7 +902,7 @@ class MainWindow(QMainWindow):
                 except Exception:
                     pass
                 added.append(ann)
-            cb(total, total, f"Selesai membaca {total} gambar.")
+            cb(total, total, f"Done reading {total} image(s).")
             return added
 
         def _on_done(added_list):
@@ -911,15 +911,15 @@ class MainWindow(QMainWindow):
                 _station.annotations.append(ann)
             self._refresh_image_tree()
             self._set_status(
-                f"Ditambahkan {len(added_list)} gambar ke {_station.name}"
+                f"Added {len(added_list)} image(s) to {_station.name}"
             )
 
         def _on_error(msg):
             dlg.accept()
-            QMessageBox.warning(self, "Gagal", msg)
+            QMessageBox.warning(self, "Error", msg)
 
         dlg = ProgressDialog(
-            "Menambahkan Gambar…", total=len(new_files), cancellable=False, parent=self
+            "Adding Images…", total=len(new_files), cancellable=False, parent=self
         )
         worker = WorkerThread(_read_dimensions, parent=self)
         worker.progress.connect(dlg.update)
@@ -969,14 +969,14 @@ class MainWindow(QMainWindow):
             total = len(anns)
             for i, ann in enumerate(anns):
                 name = os.path.basename(ann.image_path)
-                cb(i, total, f"Generate titik {i+1}/{total}: {name}")
+                cb(i, total, f"Generating points {i+1}/{total}: {name}")
                 ann.points = generate_points(
                     ann.image_width or 1000, ann.image_height or 1000,
                     _n_pts, _dist, _border,
                     border_rect=_project.border_rect,
                     border_polygon=_project.border_polygon,
                 )
-            cb(total, total, f"Selesai — {total} gambar diproses.")
+            cb(total, total, f"Done — {total} image(s) processed.")
             return total
 
         def _on_done(total):
@@ -985,14 +985,14 @@ class MainWindow(QMainWindow):
             if current_ann:
                 self._reload_canvas_ann(current_ann)
             self._refresh_image_tree()
-            self._set_status(f"Generate titik selesai untuk {total} gambar")
+            self._set_status(f"Points generated for all {total} images")
 
         def _on_error(msg):
             dlg.accept()
-            QMessageBox.warning(self, "Gagal", msg)
+            QMessageBox.warning(self, "Error", msg)
 
         dlg = ProgressDialog(
-            "Generate Titik…",
+            "Generating Points…",
             total=len(_project.annotations),
             cancellable=False,
             parent=self,
@@ -1023,14 +1023,14 @@ class MainWindow(QMainWindow):
 
         def _on_done(out_path):
             dlg.accept()
-            self._set_status(f"Ekspor Excel selesai: {out_path}")
+            self._set_status(f"Excel exported: {out_path}")
 
         def _on_error(msg):
             dlg.accept()
-            QMessageBox.critical(self, "Gagal Ekspor", msg)
+            QMessageBox.critical(self, "Export Failed", msg)
 
         dlg = ProgressDialog(
-            "Mengekspor Excel…", total=18, cancellable=False, parent=self
+            "Exporting Excel…", total=18, cancellable=False, parent=self
         )
         worker = WorkerThread(_run, parent=self)
         worker.progress.connect(dlg.update)

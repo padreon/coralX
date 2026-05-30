@@ -167,9 +167,9 @@ class AILabelDialog(QDialog):
         _project = self._project
 
         def _run(cb):
-            cb(0, 0, "Memuat model AI…")
+            cb(0, 0, "Loading AI model…")
             labeler = AILabeler(path)
-            cb(0, 0, "Memetakan kelas ke kode karang…")
+            cb(0, 0, "Mapping classes to coral codes…")
             suggestions = AILabeler.suggest_mapping(
                 labeler.class_names(), _project.coral_codes
             )
@@ -185,18 +185,18 @@ class AILabelDialog(QDialog):
             self._run_btn.setEnabled(True)
             task_label = "detection" if labeler.task == "detect" else "classification"
             QMessageBox.information(
-                self, "Model Berhasil Dimuat",
-                f"Model dimuat.\n"
-                f"Tipe: {task_label}\n"
-                f"Kelas ({len(labeler.class_names())}): {', '.join(labeler.class_names())}",
+                self, "Model Loaded",
+                f"Model loaded successfully.\n"
+                f"Type: {task_label}\n"
+                f"Classes ({len(labeler.class_names())}): {', '.join(labeler.class_names())}",
             )
 
         def _on_error(msg):
             dlg.accept()
-            QMessageBox.critical(self, "Gagal Memuat Model", msg)
+            QMessageBox.critical(self, "Failed to Load Model", msg)
 
-        dlg = ProgressDialog("Memuat Model AI…", cancellable=False, parent=self)
-        dlg.set_indeterminate("Memuat model, harap tunggu…")
+        dlg = ProgressDialog("Loading AI Model…", cancellable=False, parent=self)
+        dlg.set_indeterminate("Loading model, please wait…")
         worker = WorkerThread(_run, parent=self)
         worker.progress.connect(dlg.update)
         worker.succeeded.connect(_on_done)

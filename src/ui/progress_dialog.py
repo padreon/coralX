@@ -44,7 +44,7 @@ class ProgressDialog(QDialog):
         layout.setSpacing(10)
         layout.setContentsMargins(20, 16, 20, 16)
 
-        self._status = QLabel("Memulai…")
+        self._status = QLabel("Starting…")
         self._status.setWordWrap(True)
         layout.addWidget(self._status)
 
@@ -61,7 +61,7 @@ class ProgressDialog(QDialog):
         if cancellable:
             btn_row = QHBoxLayout()
             btn_row.addStretch()
-            self._cancel_btn = QPushButton("Batalkan")
+            self._cancel_btn = QPushButton("Cancel")
             self._cancel_btn.clicked.connect(self._on_cancel)
             btn_row.addWidget(self._cancel_btn)
             layout.addLayout(btn_row)
@@ -95,7 +95,7 @@ class ProgressDialog(QDialog):
         self.cancelled.emit()
         if self._cancel_btn:
             self._cancel_btn.setEnabled(False)
-            self._cancel_btn.setText("Membatalkan…")
+            self._cancel_btn.setText("Cancelling…")
 
     @property
     def is_cancelled(self) -> bool:

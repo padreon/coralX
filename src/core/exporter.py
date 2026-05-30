@@ -40,12 +40,12 @@ def export_excel(
     TOTAL = 18
     step = 0
 
-    _cb(step, TOTAL, "Menghitung statistik…")
+    _cb(step, TOTAL, "Computing statistics…")
     summary = project_summary(project)
     per_station = per_station_table(project)
     per_image = per_image_table(project)
     step += 1
-    _cb(step, TOTAL, "Menyiapkan data…")
+    _cb(step, TOTAL, "Preparing data…")
 
     # Raw points (with station column)
     raw_rows = []
@@ -146,7 +146,7 @@ def export_excel(
 
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         # Summary
-        step += 1; _cb(step, TOTAL, "Menulis sheet Summary…")
+        step += 1; _cb(step, TOTAL, "Writing Summary sheet…")
         row_cursor = 0
         pd.DataFrame(s1_rows).to_excel(
             writer, sheet_name="Summary", index=False, startrow=row_cursor)
@@ -159,31 +159,31 @@ def export_excel(
             pd.DataFrame(grp_rows).to_excel(
                 writer, sheet_name="Summary", index=False, startrow=row_cursor)
 
-        step += 1; _cb(step, TOTAL, "Menulis sheet Group Coverage…")
+        step += 1; _cb(step, TOTAL, "Writing Group Coverage sheet…")
         pd.DataFrame(grp_sheet_rows).fillna(0).to_excel(writer, sheet_name="Group Coverage", index=False)
 
-        step += 1; _cb(step, TOTAL, "Menulis sheet Per Station…")
+        step += 1; _cb(step, TOTAL, "Writing Per Station sheet…")
         pd.DataFrame(per_station).fillna(0).to_excel(writer, sheet_name="Per Station", index=False)
 
-        step += 1; _cb(step, TOTAL, f"Menulis sheet Per Image ({len(per_image)} gambar)…")
+        step += 1; _cb(step, TOTAL, f"Writing Per Image sheet ({len(per_image)} images)…")
         pd.DataFrame(per_image).fillna(0).to_excel(writer, sheet_name="Per Image", index=False)
 
-        step += 1; _cb(step, TOTAL, "Menulis sheet Statistics…")
+        step += 1; _cb(step, TOTAL, "Writing Statistics sheet…")
         pd.DataFrame(stats_rows).to_excel(writer, sheet_name="Statistics", index=False)
 
         if cover_rows:
-            step += 1; _cb(step, TOTAL, "Menulis sheet Cover Area…")
+            step += 1; _cb(step, TOTAL, "Writing Cover Area sheet…")
             pd.DataFrame(cover_rows).fillna(0).to_excel(writer, sheet_name="Cover Area", index=False)
         else:
             step += 1
 
-        step += 1; _cb(step, TOTAL, f"Menulis sheet Raw Points ({len(raw_rows):,} titik)…")
+        step += 1; _cb(step, TOTAL, f"Writing Raw Points sheet ({len(raw_rows):,} points)…")
         pd.DataFrame(raw_rows).to_excel(writer, sheet_name="Raw Points", index=False)
 
-        step += 1; _cb(step, TOTAL, "Menghitung analisa multivariat…")
+        step += 1; _cb(step, TOTAL, "Computing multivariate analysis…")
         _write_multivariate_sheets(writer, project)
 
-        step += 1; _cb(step, TOTAL, "Menulis Map Data…")
+        step += 1; _cb(step, TOTAL, "Writing Map Data sheet…")
         _write_map_data_sheet(writer, project)
 
     # --- Charts: generate PNGs then embed into Excel (Fase 5) ---
@@ -237,7 +237,7 @@ def export_excel(
         for i, (fname, fn) in enumerate(chart_fns):
             label = fname.split("_", 1)[1].replace(".png", "").replace("_", " ").title()
             step += 1
-            _cb(step, TOTAL, f"Membuat chart {i+1}/{len(chart_fns)}: {label}…")
+            _cb(step, TOTAL, f"Generating chart {i+1}/{len(chart_fns)}: {label}…")
             p = fn()
             if p:
                 chart_paths.append(p)
@@ -248,10 +248,10 @@ def export_excel(
         step += len(chart_names)
 
     if chart_paths:
-        step += 1; _cb(step, TOTAL, f"Menyisipkan {len(chart_paths)} chart ke Excel…")
+        step += 1; _cb(step, TOTAL, f"Embedding {len(chart_paths)} charts into Excel…")
         _embed_charts_sheet(output_path, chart_paths)
 
-    _cb(TOTAL, TOTAL, "Selesai.")
+    _cb(TOTAL, TOTAL, "Done.")
 
     return output_path
 

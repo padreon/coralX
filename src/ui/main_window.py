@@ -456,12 +456,29 @@ class MainWindow(QMainWindow):
         self._v_splitter.addWidget(self._h_splitter)
         h_splitter = self._h_splitter
 
-        # ---- Left panel: station tree + settings + stats ----
+        # ---- Left panel: progress + station tree + collapsible settings ----
         left = QWidget()
         left.setMinimumWidth(160)
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(8, 8, 8, 8)
         left_layout.setSpacing(4)
+
+        # Progress at the very top
+        scope_row = QHBoxLayout()
+        scope_row.addWidget(QLabel("Progress:"))
+        self._progress_scope_combo = QComboBox()
+        self._progress_scope_combo.addItems(["This image", "This station", "Project"])
+        self._progress_scope_combo.currentIndexChanged.connect(self._on_scope_changed)
+        scope_row.addWidget(self._progress_scope_combo)
+        left_layout.addLayout(scope_row)
+
+        self.progress_label = QLabel("No image loaded")
+        self.progress_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        left_layout.addWidget(self.progress_label)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setTextVisible(True)
+        left_layout.addWidget(self.progress_bar)
 
         # Images header row with filter checkbox
         img_header = QHBoxLayout()
@@ -498,8 +515,10 @@ class MainWindow(QMainWindow):
         self.image_tree.customContextMenuRequested.connect(self._on_tree_context_menu)
         left_layout.addWidget(self.image_tree)
 
-        settings_box = QGroupBox("Point Settings")
-        settings_layout = QFormLayout(settings_box)
+        # Collapsible Point Settings
+        settings_content = QWidget()
+        settings_layout = QFormLayout(settings_content)
+        settings_layout.setContentsMargins(4, 4, 4, 4)
 
         self.spin_points = QSpinBox()
         self.spin_points.setRange(1, 500)
@@ -535,15 +554,7 @@ class MainWindow(QMainWindow):
         border_draw_layout.addWidget(btn_border_clear)
         settings_layout.addRow("Draw:", border_draw_widget)
 
-        left_layout.addWidget(settings_box)
-
-        stats_box = QGroupBox("Quick Stats")
-        stats_layout = QVBoxLayout(stats_box)
-        self.stats_label = QLabel("—")
-        self.stats_label.setWordWrap(True)
-        self.stats_label.setAlignment(Qt.AlignmentFlag.AlignTop)
-        stats_layout.addWidget(self.stats_label)
-        left_layout.addWidget(stats_box)
+        left_layout.addWidget(self._make_collapsible("Point Settings", settings_content, "ui/settings_collapsed"))
 
         h_splitter.addWidget(left)
 
@@ -556,29 +567,22 @@ class MainWindow(QMainWindow):
         self.canvas.status_message.connect(self._set_status)
         h_splitter.addWidget(self.canvas)
 
-        # ---- Right panel: progress + points table ----
+        # ---- Right panel: quick stats + points table ----
         right = QWidget()
         right.setMinimumWidth(180)
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(8, 8, 8, 8)
         right_layout.setSpacing(4)
 
-        # Progress section
-        scope_row = QHBoxLayout()
-        scope_row.addWidget(QLabel("Progress:"))
-        self._progress_scope_combo = QComboBox()
-        self._progress_scope_combo.addItems(["This image", "This station", "Project"])
-        self._progress_scope_combo.currentIndexChanged.connect(self._on_scope_changed)
-        scope_row.addWidget(self._progress_scope_combo)
-        right_layout.addLayout(scope_row)
-
-        self.progress_label = QLabel("No image loaded")
-        self.progress_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        right_layout.addWidget(self.progress_label)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setTextVisible(True)
-        right_layout.addWidget(self.progress_bar)
+        # Collapsible Quick Stats (moved from left panel)
+        stats_content = QWidget()
+        stats_inner = QVBoxLayout(stats_content)
+        stats_inner.setContentsMargins(4, 4, 4, 4)
+        self.stats_label = QLabel("—")
+        self.stats_label.setWordWrap(True)
+        self.stats_label.setAlignment(Qt.AlignmentFlag.AlignTop)
+        stats_inner.addWidget(self.stats_label)
+        right_layout.addWidget(self._make_collapsible("Quick Stats", stats_content, "ui/stats_collapsed"))
 
         right_layout.addWidget(QLabel("Points"))
 
@@ -723,6 +727,53 @@ class MainWindow(QMainWindow):
         self.statusbar = QStatusBar()
         self.setStatusBar(self.statusbar)
         self._set_status("Ready")
+
+    def _make_collapsible(self, title: str, content: QWidget, settings_key: str) -> QWidget:
+        """Return a wrapper widget with a clickable header that collapses/expands content."""
+        s = QSettings("coralX", "coralX")
+        expanded = s.value(settings_key, True, type=bool)
+
+        wrapper = QWidget()
+        vbox = QVBoxLayout(wrapper)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(0)
+
+        header = QWidget()
+        header.setCursor(Qt.CursorShape.PointingHandCursor)
+        header.setStyleSheet(
+            "QWidget { background: #444; border-radius: 3px; }"
+            "QWidget:hover { background: #555; }"
+        )
+        h_row = QHBoxLayout(header)
+        h_row.setContentsMargins(6, 3, 6, 3)
+        h_row.setSpacing(4)
+
+        toggle_btn = QPushButton("▼" if expanded else "▶")
+        toggle_btn.setFixedSize(16, 16)
+        toggle_btn.setFlat(True)
+        toggle_btn.setStyleSheet("font-size: 8px; color: #ccc; border: none; background: transparent;")
+        h_row.addWidget(toggle_btn)
+
+        lbl = QLabel(title)
+        lbl.setStyleSheet("font-weight: bold; font-size: 10px; color: #ddd; background: transparent;")
+        h_row.addWidget(lbl)
+        h_row.addStretch()
+
+        vbox.addWidget(header)
+        vbox.addWidget(content)
+
+        content.setVisible(expanded)
+
+        def _toggle(_=None):
+            is_exp = not content.isVisible()
+            content.setVisible(is_exp)
+            toggle_btn.setText("▼" if is_exp else "▶")
+            QSettings("coralX", "coralX").setValue(settings_key, is_exp)
+
+        toggle_btn.clicked.connect(_toggle)
+        header.mousePressEvent = _toggle  # type: ignore[method-assign]
+
+        return wrapper
 
     def closeEvent(self, event) -> None:
         s = QSettings("coralX", "coralX")

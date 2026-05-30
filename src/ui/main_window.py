@@ -554,7 +554,7 @@ class MainWindow(QMainWindow):
         btn_border_clear.setFixedWidth(28)
         btn_border_clear.setToolTip("Clear custom border")
         btn_border_2pt.setToolTip("Click 2 diagonal corners to set rectangular border")
-        btn_border_4pt.setToolTip("Click 4 corners to define a quadrilateral border (auto-closes)")
+        btn_border_4pt.setToolTip("Click to add polygon vertices (arbitrary number supported); right-click to close")
         btn_border_2pt.clicked.connect(lambda: self.canvas.start_border_drawing('2point'))
         btn_border_4pt.clicked.connect(lambda: self.canvas.start_border_drawing('polygon'))
         btn_border_clear.clicked.connect(self._clear_border_rect)

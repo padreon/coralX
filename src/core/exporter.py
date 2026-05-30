@@ -186,7 +186,10 @@ def _embed_charts_sheet(excel_path: str, chart_paths: list[str]) -> None:
     from openpyxl import load_workbook
     from openpyxl.drawing.image import Image as XLImage
 
-    wb = load_workbook(excel_path)
+    # Pass a file object so openpyxl skips the extension check (it rejects
+    # paths without a recognised extension even when the content is valid xlsx).
+    with open(excel_path, "rb") as f:
+        wb = load_workbook(f)
     ws = wb.create_sheet("Charts")
     row_cursor = 1
     for path in chart_paths:

@@ -5,9 +5,9 @@ from PyQt6.QtWidgets import (
     QProgressBar, QTableWidget, QTableWidgetItem, QToolBar, QDialog,
     QFormLayout, QLineEdit, QDialogButtonBox, QStyledItemDelegate,
     QAbstractItemView, QAbstractItemDelegate, QCompleter, QScrollArea,
-    QMenu, QCheckBox, QTextEdit, QTabWidget,
+    QMenu, QCheckBox, QTextEdit, QTabWidget, QLayout, QSizePolicy,
 )
-from PyQt6.QtCore import Qt, QThread, QSize, pyqtSignal, QTimer, QUrl
+from PyQt6.QtCore import Qt, QThread, QSize, QRect, QPoint, pyqtSignal, QTimer, QUrl
 from typing import Callable
 from PyQt6.QtGui import QIcon, QImage, QPixmap, QDesktopServices
 import os
@@ -33,6 +33,68 @@ from src.core.importer import (
     import_cpce_excel,
     import_cpce_cpc,
 )
+
+
+class FlowLayout(QLayout):
+    """Wrapping flow layout — arranges items left-to-right, wrapping to new rows."""
+
+    def __init__(self, parent=None, h_spacing: int = 6, v_spacing: int = 4):
+        super().__init__(parent)
+        self._items: list = []
+        self._h = h_spacing
+        self._v = v_spacing
+
+    def addItem(self, item) -> None:
+        self._items.append(item)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index: int):
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index: int):
+        return self._items.pop(index) if 0 <= index < len(self._items) else None
+
+    def expandingDirections(self):
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, width: int) -> int:
+        return self._do_layout(QRect(0, 0, width, 0), dry_run=True)
+
+    def setGeometry(self, rect: QRect) -> None:
+        super().setGeometry(rect)
+        self._do_layout(rect, dry_run=False)
+
+    def sizeHint(self) -> QSize:
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        m = self.contentsMargins()
+        return size + QSize(m.left() + m.right(), m.top() + m.bottom())
+
+    def _do_layout(self, rect: QRect, dry_run: bool) -> int:
+        m = self.contentsMargins()
+        r = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
+        x, y, row_h = r.x(), r.y(), 0
+        for item in self._items:
+            iw = item.sizeHint().width()
+            ih = item.sizeHint().height()
+            if x + iw > r.right() + 1 and row_h > 0:
+                x = r.x()
+                y += row_h + self._v
+                row_h = 0
+            if not dry_run:
+                item.setGeometry(QRect(QPoint(x, y), item.sizeHint()))
+            x += iw + self._h
+            row_h = max(row_h, ih)
+        return y + row_h - rect.y() + m.bottom()
 
 
 class ThumbnailLoader(QThread):
@@ -430,37 +492,24 @@ class MainWindow(QMainWindow):
         border_draw_layout.setContentsMargins(0, 0, 0, 0)
         btn_border_2pt = QPushButton("✏ 2-pt")
         btn_border_4pt = QPushButton("✏ 4-pt")
+        btn_border_poly = QPushButton("✏ Poly")
         btn_border_clear = QPushButton("✕")
         btn_border_clear.setFixedWidth(28)
         btn_border_clear.setToolTip("Clear custom border")
         btn_border_2pt.setToolTip("Click 2 diagonal corners to set border")
         btn_border_4pt.setToolTip("Click 4 corners to set border")
+        btn_border_poly.setToolTip("Click multiple points to define polygon border (right-click to close)")
         btn_border_2pt.clicked.connect(lambda: self.canvas.start_border_drawing('2point'))
         btn_border_4pt.clicked.connect(lambda: self.canvas.start_border_drawing('4point'))
+        btn_border_poly.clicked.connect(lambda: self.canvas.start_border_drawing('polygon'))
         btn_border_clear.clicked.connect(self._clear_border_rect)
         border_draw_layout.addWidget(btn_border_2pt)
         border_draw_layout.addWidget(btn_border_4pt)
+        border_draw_layout.addWidget(btn_border_poly)
         border_draw_layout.addWidget(btn_border_clear)
         settings_layout.addRow("Draw:", border_draw_widget)
 
         left_layout.addWidget(settings_box)
-
-        # Progress scope selector
-        scope_row = QHBoxLayout()
-        scope_row.addWidget(QLabel("Progress:"))
-        self._progress_scope_combo = QComboBox()
-        self._progress_scope_combo.addItems(["This image", "This station", "Project"])
-        self._progress_scope_combo.currentIndexChanged.connect(self._on_scope_changed)
-        scope_row.addWidget(self._progress_scope_combo)
-        left_layout.addLayout(scope_row)
-
-        self.progress_label = QLabel("No image loaded")
-        self.progress_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        left_layout.addWidget(self.progress_label)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setTextVisible(True)
-        left_layout.addWidget(self.progress_bar)
 
         stats_box = QGroupBox("Quick Stats")
         stats_layout = QVBoxLayout(stats_box)
@@ -477,14 +526,33 @@ class MainWindow(QMainWindow):
         self.canvas.point_labeled.connect(self._on_point_labeled)
         self.canvas.point_selected.connect(self._on_canvas_point_selected)
         self.canvas.border_defined.connect(self._on_border_defined)
+        self.canvas.border_polygon_defined.connect(self._on_border_polygon_defined)
         self.canvas.status_message.connect(self._set_status)
         h_splitter.addWidget(self.canvas)
 
-        # ---- Right panel: points table ----
+        # ---- Right panel: progress + points table ----
         right = QWidget()
         right.setFixedWidth(260)
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(8, 8, 8, 8)
+        right_layout.setSpacing(4)
+
+        # Progress section
+        scope_row = QHBoxLayout()
+        scope_row.addWidget(QLabel("Progress:"))
+        self._progress_scope_combo = QComboBox()
+        self._progress_scope_combo.addItems(["This image", "This station", "Project"])
+        self._progress_scope_combo.currentIndexChanged.connect(self._on_scope_changed)
+        scope_row.addWidget(self._progress_scope_combo)
+        right_layout.addLayout(scope_row)
+
+        self.progress_label = QLabel("No image loaded")
+        self.progress_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        right_layout.addWidget(self.progress_label)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setTextVisible(True)
+        right_layout.addWidget(self.progress_bar)
 
         right_layout.addWidget(QLabel("Points"))
 
@@ -513,8 +581,8 @@ class MainWindow(QMainWindow):
 
     def _build_codes_panel(self) -> QWidget:
         panel = QWidget()
-        panel.setMinimumHeight(160)
-        panel.setMaximumHeight(200)
+        panel.setMinimumHeight(80)
+        panel.setMaximumHeight(220)
         panel_layout = QVBoxLayout(panel)
         panel_layout.setContentsMargins(8, 4, 8, 4)
         panel_layout.setSpacing(4)
@@ -536,8 +604,8 @@ class MainWindow(QMainWindow):
         panel_layout.addLayout(header)
 
         self._codes_scroll = QScrollArea()
-        self._codes_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self._codes_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._codes_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._codes_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._codes_scroll.setWidgetResizable(True)
         self._codes_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         panel_layout.addWidget(self._codes_scroll)
@@ -569,9 +637,8 @@ class MainWindow(QMainWindow):
             display_groups.append({"name": "Other", "codes": ungrouped})
 
         content = QWidget()
-        h_layout = QHBoxLayout(content)
-        h_layout.setContentsMargins(4, 2, 4, 2)
-        h_layout.setSpacing(16)
+        flow = FlowLayout(content, h_spacing=10, v_spacing=4)
+        flow.setContentsMargins(4, 2, 4, 2)
 
         for group in display_groups:
             group_codes = [c for c in group.get("codes", []) if c in codes]
@@ -583,46 +650,49 @@ class MainWindow(QMainWindow):
             else:
                 group_codes = sorted(group_codes, key=lambda c: freq.get(c, 0), reverse=True)
 
-            col = QWidget()
-            col_layout = QVBoxLayout(col)
-            col_layout.setContentsMargins(0, 0, 0, 0)
-            col_layout.setSpacing(2)
+            grp_widget = QWidget()
+            grp_layout = QVBoxLayout(grp_widget)
+            grp_layout.setContentsMargins(0, 0, 0, 0)
+            grp_layout.setSpacing(2)
 
             grp_color = group.get("color", "")
             lbl = QLabel(group["name"])
             if grp_color and len(grp_color) == 6:
-                # Use CPCe group color as background; choose contrasting text
                 r, g_val, b = int(grp_color[0:2], 16), int(grp_color[2:4], 16), int(grp_color[4:6], 16)
                 luminance = 0.299 * r + 0.587 * g_val + 0.114 * b
                 txt_color = "#000" if luminance > 140 else "#fff"
                 lbl.setStyleSheet(
-                    f"font-weight: bold; font-size: 10px; color: {txt_color};"
+                    f"font-weight: bold; font-size: 9px; color: {txt_color};"
                     f" background: #{grp_color}; border-radius: 3px; padding: 1px 4px;"
                 )
             else:
-                lbl.setStyleSheet("font-weight: bold; font-size: 10px; color: #999;")
+                lbl.setStyleSheet("font-weight: bold; font-size: 9px; color: #999;")
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            col_layout.addWidget(lbl)
+            grp_layout.addWidget(lbl)
 
             btn_row = QHBoxLayout()
-            btn_row.setSpacing(3)
+            btn_row.setSpacing(2)
+            btn_row.setContentsMargins(0, 0, 0, 0)
             for code in group_codes:
                 count = freq.get(code, 0)
                 btn = QPushButton(f"{code}\n{count}")
-                btn.setFixedWidth(54)
-                btn.setFixedHeight(44)
+                btn.setMinimumWidth(40)
+                btn.setFixedHeight(36)
+                btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
                 btn.setToolTip(f"{code} — {codes[code]}")
                 btn.setStyleSheet(
-                    "QPushButton { font-size: 10px; font-weight: bold; }"
+                    "QPushButton { font-size: 9px; font-weight: bold; padding: 0 4px; }"
                     "QPushButton:hover { background: #3a6ea5; color: white; }"
                 )
                 btn.clicked.connect(lambda checked, c=code: self._label_selected_point(c))
                 btn_row.addWidget(btn)
-            col_layout.addLayout(btn_row)
 
-            h_layout.addWidget(col)
+            btn_container = QWidget()
+            btn_container.setLayout(btn_row)
+            grp_layout.addWidget(btn_container)
 
-        h_layout.addStretch()
+            flow.addWidget(grp_widget)
+
         self._codes_scroll.setWidget(content)
 
     def _build_statusbar(self):
@@ -719,6 +789,7 @@ class MainWindow(QMainWindow):
             self.combo_dist.currentText(),
             self.spin_border.value(),
             border_rect=self.project.border_rect,
+            border_polygon=self.project.border_polygon,
         )
         self._reload_canvas_ann(ann)
         self._set_status(f"Generated {len(ann.points)} points")
@@ -733,6 +804,7 @@ class MainWindow(QMainWindow):
                 self.combo_dist.currentText(),
                 self.spin_border.value(),
                 border_rect=self.project.border_rect,
+                border_polygon=self.project.border_polygon,
             )
         current_ann = self._current_annotation()
         if current_ann:
@@ -1336,10 +1408,15 @@ class MainWindow(QMainWindow):
         else:
             self._log.warning("Could not read image file: %s", ann.image_path)
 
-        if self.project.border_rect:
+        if self.project.border_polygon:
+            self.canvas.set_border_polygon(self.project.border_polygon)
+            self.canvas.set_border_rect(None)
+        elif self.project.border_rect:
             self.canvas.set_border_rect(tuple(self.project.border_rect))
+            self.canvas.set_border_polygon(None)
         else:
             self.canvas.set_border_rect(None)
+            self.canvas.set_border_polygon(None)
             self.canvas.set_border(self.spin_border.value())
         self.canvas.load_image(ann, self.project.coral_codes)
         self._update_progress(ann)
@@ -1543,12 +1620,21 @@ class MainWindow(QMainWindow):
     def _on_border_defined(self, x_min: int, y_min: int, x_max: int, y_max: int):
         if self.project:
             self.project.border_rect = [x_min, y_min, x_max, y_max]
+            self.project.border_polygon = None
         self._set_status(f"Border set: ({x_min}, {y_min}) → ({x_max}, {y_max})")
+
+    def _on_border_polygon_defined(self, poly: list) -> None:
+        if self.project:
+            self.project.border_polygon = poly
+            self.project.border_rect = None
+        self._set_status(f"Polygon border set: {len(poly)} points")
 
     def _clear_border_rect(self):
         if self.project:
             self.project.border_rect = None
+            self.project.border_polygon = None
         self.canvas.set_border_rect(None)
+        self.canvas.set_border_polygon(None)
         self.canvas.set_border(self.spin_border.value())
         self._set_status("Custom border cleared")
 

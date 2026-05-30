@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QWidget, QMenu
 from PyQt6.QtCore import Qt, QPoint, QTimer, pyqtSignal
-from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QFont, QTransform
+from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QFont, QTransform, QPolygon
 import cv2
 
 from src.models.project import Point, ImageAnnotation
@@ -13,9 +13,10 @@ COLOR_SELECTED = QColor(255, 220, 0, 255)
 
 
 class ImageCanvas(QWidget):
-    point_labeled = pyqtSignal(int, str)        # point index, label
-    point_selected = pyqtSignal(int)             # emitted when selection changes
+    point_labeled = pyqtSignal(int, str)          # point index, label
+    point_selected = pyqtSignal(int)              # emitted when selection changes
     border_defined = pyqtSignal(int, int, int, int)  # x_min, y_min, x_max, y_max
+    border_polygon_defined = pyqtSignal(list)     # [[x, y], ...] polygon points
     status_message = pyqtSignal(str)
 
     def __init__(self, parent=None):
@@ -32,8 +33,9 @@ class ImageCanvas(QWidget):
         self._pan_start: QPoint | None = None
         self._selected_index: int | None = None
         self._border: int = 0
-        self._border_rect: tuple | None = None   # (x_min, y_min, x_max, y_max) when set by click
-        self._border_mode: str | None = None     # '2point' or '4point'
+        self._border_rect: tuple | None = None    # (x_min, y_min, x_max, y_max) when set by click
+        self._drawn_polygon: list | None = None   # [[x, y], ...] stored polygon
+        self._border_mode: str | None = None      # '2point', '4point', or 'polygon'
         self._border_clicks: list = []
 
         # Keyboard shortcut labeling buffer
@@ -83,14 +85,25 @@ class ImageCanvas(QWidget):
 
     def set_border_rect(self, rect: tuple | None):
         self._border_rect = rect
+        if rect is not None:
+            self._drawn_polygon = None
+        self.update()
+
+    def set_border_polygon(self, polygon: list | None):
+        self._drawn_polygon = polygon
+        if polygon is not None:
+            self._border_rect = None
         self.update()
 
     def start_border_drawing(self, mode: str):
         self._border_mode = mode
         self._border_clicks = []
         self.setCursor(Qt.CursorShape.CrossCursor)
-        required = 2 if mode == '2point' else 4
-        self.status_message.emit(f"Click {required} points to define border  (ESC to cancel)")
+        if mode == 'polygon':
+            self.status_message.emit("Click to add polygon points  (right-click to close, ESC to cancel)")
+        else:
+            required = 2 if mode == '2point' else 4
+            self.status_message.emit(f"Click {required} points to define border  (ESC to cancel)")
         self.update()
 
     def cancel_border_drawing(self):
@@ -139,7 +152,13 @@ class ImageCanvas(QWidget):
         painter.setTransform(transform)
         painter.drawPixmap(0, 0, self._pixmap)
 
-        if self._border_rect:
+        if self._drawn_polygon and len(self._drawn_polygon) >= 3:
+            pts = [QPoint(int(x), int(y)) for x, y in self._drawn_polygon]
+            pen = QPen(QColor(255, 200, 0, 200), 2.0 / self._zoom, Qt.PenStyle.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(QColor(255, 200, 0, 25))
+            painter.drawPolygon(QPolygon(pts))
+        elif self._border_rect:
             x0, y0, x1, y1 = self._border_rect
             pen = QPen(QColor(255, 200, 0, 200), 2.0 / self._zoom, Qt.PenStyle.DashLine)
             painter.setPen(pen)
@@ -158,7 +177,12 @@ class ImageCanvas(QWidget):
                 painter.setBrush(QColor(0, 200, 255, 220))
                 painter.setPen(QPen(QColor(0, 0, 0, 180), 1.0 / self._zoom))
                 painter.drawEllipse(pt.x() - r, pt.y() - r, r * 2, r * 2)
-            if len(self._border_clicks) >= 2:
+            if self._border_mode == 'polygon' and len(self._border_clicks) >= 2:
+                painter.setBrush(QColor(0, 0, 0, 0))
+                painter.setPen(QPen(QColor(0, 200, 255, 200), 2.0 / self._zoom, Qt.PenStyle.SolidLine))
+                for i in range(1, len(self._border_clicks)):
+                    painter.drawLine(self._border_clicks[i - 1], self._border_clicks[i])
+            elif len(self._border_clicks) >= 2:
                 xs = [p.x() for p in self._border_clicks]
                 ys = [p.y() for p in self._border_clicks]
                 painter.setBrush(QColor(0, 200, 255, 30))
@@ -204,16 +228,28 @@ class ImageCanvas(QWidget):
     # ------------------------------------------------------------------ events
 
     def mousePressEvent(self, event):
-        if self._border_mode and event.button() == Qt.MouseButton.LeftButton:
-            img_pos = self._screen_to_image(event.pos())
-            self._border_clicks.append(img_pos)
-            required = 2 if self._border_mode == '2point' else 4
-            remaining = required - len(self._border_clicks)
-            if remaining > 0:
-                self.status_message.emit(f"Border: {remaining} more click(s)  (ESC to cancel)")
-            else:
-                self._finish_border_drawing()
-            self.update()
+        if self._border_mode:
+            if event.button() == Qt.MouseButton.LeftButton:
+                img_pos = self._screen_to_image(event.pos())
+                self._border_clicks.append(img_pos)
+                if self._border_mode == 'polygon':
+                    n = len(self._border_clicks)
+                    self.status_message.emit(
+                        f"Polygon: {n} point(s) added  (right-click to close, ESC to cancel)"
+                    )
+                else:
+                    required = 2 if self._border_mode == '2point' else 4
+                    remaining = required - len(self._border_clicks)
+                    if remaining > 0:
+                        self.status_message.emit(f"Border: {remaining} more click(s)  (ESC to cancel)")
+                    else:
+                        self._finish_border_drawing()
+                self.update()
+            elif self._border_mode == 'polygon' and event.button() == Qt.MouseButton.RightButton:
+                if len(self._border_clicks) >= 3:
+                    self._finish_polygon()
+                else:
+                    self.status_message.emit("Need at least 3 points to close polygon")
             return
 
         if event.button() == Qt.MouseButton.MiddleButton:
@@ -270,10 +306,21 @@ class ImageCanvas(QWidget):
         x_max = min(w, int(max(xs)))
         y_max = min(h, int(max(ys)))
         self._border_rect = (x_min, y_min, x_max, y_max)
+        self._drawn_polygon = None
         self._border_mode = None
         self._border_clicks = []
         self.setCursor(Qt.CursorShape.ArrowCursor)
         self.border_defined.emit(x_min, y_min, x_max, y_max)
+        self.update()
+
+    def _finish_polygon(self):
+        poly = [[p.x(), p.y()] for p in self._border_clicks]
+        self._drawn_polygon = poly
+        self._border_rect = None
+        self._border_mode = None
+        self._border_clicks = []
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.border_polygon_defined.emit(poly)
         self.update()
 
     def keyPressEvent(self, event):

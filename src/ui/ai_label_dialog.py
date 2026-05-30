@@ -131,7 +131,7 @@ class AILabelDialog(QDialog):
         self._mapping_table.setMinimumHeight(120)
         self._mapping_table.hide()
         mapping_layout.addWidget(self._mapping_table)
-        reload_btn = QPushButton("Reload Model")
+        reload_btn = QPushButton("Load Model")
         reload_btn.clicked.connect(self._load_model)
         mapping_layout.addWidget(reload_btn)
         layout.addWidget(mapping_box)
@@ -146,10 +146,6 @@ class AILabelDialog(QDialog):
         self._btn_box.accepted.connect(self.accept)
         self._btn_box.rejected.connect(self.reject)
         layout.addWidget(self._btn_box)
-
-        # Auto-load saved model path on open
-        if self._model_path_edit.text().strip():
-            self._load_model()
 
     def _browse_model(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

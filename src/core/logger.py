@@ -1,3 +1,4 @@
+"""Logging setup and crash-handler utilities for coralX."""
 from __future__ import annotations
 
 import logging
@@ -10,8 +11,17 @@ import traceback
 from pathlib import Path
 from types import TracebackType
 
-_log_file_path: Path | None = None
-_initialized = False
+try:
+    from PyQt6.QtCore import QMessageLogContext, QtMsgType, qInstallMessageHandler
+    from PyQt6.QtWidgets import QApplication, QMessageBox
+    _QT_AVAILABLE = True
+except ImportError:
+    _QT_AVAILABLE = False
+
+
+class _State:
+    log_file_path: Path | None = None
+    initialized: bool = False
 
 
 def _log_dir() -> Path:
@@ -27,13 +37,12 @@ def _log_dir() -> Path:
 
 def log_path() -> Path:
     """Return the path to the active log file."""
-    return _log_file_path if _log_file_path is not None else _log_dir() / "coralX.log"
+    return _State.log_file_path if _State.log_file_path is not None else _log_dir() / "coralX.log"
 
 
 def setup_logging(level: int = logging.DEBUG) -> None:
     """Configure root logger with a rotating file handler plus a stderr handler for WARNING+."""
-    global _initialized, _log_file_path
-    if _initialized:
+    if _State.initialized:
         return
 
     fmt = logging.Formatter(
@@ -48,9 +57,9 @@ def setup_logging(level: int = logging.DEBUG) -> None:
     try:
         log_dir = _log_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
-        _log_file_path = log_dir / "coralX.log"
+        _State.log_file_path = log_dir / "coralX.log"
         fh = logging.handlers.RotatingFileHandler(
-            _log_file_path, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
+            _State.log_file_path, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
         )
         fh.setLevel(logging.DEBUG)
         fh.setFormatter(fmt)
@@ -67,10 +76,11 @@ def setup_logging(level: int = logging.DEBUG) -> None:
     sh.setFormatter(fmt)
     root.addHandler(sh)
 
-    _initialized = True
+    _State.initialized = True
 
 
 def get_logger(name: str) -> logging.Logger:
+    """Return a named logger, creating it if necessary."""
     return logging.getLogger(name)
 
 
@@ -98,8 +108,7 @@ def install_excepthook() -> None:
         # Qt UI calls are only safe from the main thread.
         if thread_name is None:
             try:
-                from PyQt6.QtWidgets import QApplication, QMessageBox
-                if QApplication.instance() is not None:
+                if _QT_AVAILABLE and QApplication.instance() is not None:
                     tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
                     msg = QMessageBox()
                     msg.setWindowTitle("coralX — Unexpected Error")
@@ -148,8 +157,6 @@ def install_excepthook() -> None:
 
 def install_qt_message_handler() -> None:
     """Forward Qt debug/warning/critical messages into the Python logger."""
-    from PyQt6.QtCore import QMessageLogContext, QtMsgType, qInstallMessageHandler
-
     _qt_log = logging.getLogger("coralX.qt")
     _level_map = {
         QtMsgType.QtDebugMsg: logging.DEBUG,

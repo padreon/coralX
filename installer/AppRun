@@ -1,5 +1,0 @@
-#!/bin/bash
-# AppImage entry point — launch coralX from the AppDir
-SELF=$(readlink -f "$0")
-HERE=${SELF%/*}
-exec "${HERE}/coralX" "$@"

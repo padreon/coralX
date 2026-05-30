@@ -8,6 +8,20 @@ Built with Python, PyQt6, and OpenCV.
 
 ---
 
+## Background
+
+I started building coralX out of a combination of practical frustration and personal ambition.
+
+The immediate trigger was CPCe itself. It is the field standard, but it was written in Visual Basic in 2006 and it shows — rendering a single image with 50 points can take several seconds, and on larger datasets the lag compounds into something genuinely painful to work through. For anyone doing serious survey work across thousands of transect photos, that time adds up fast.
+
+The second reason was my own workflow. I regularly switch between Windows, macOS, and Linux depending on where I am and what machine I have in front of me. CPCe is Windows-only, so every time I was on a different OS I was blocked. I wanted a tool that simply worked everywhere without compromises.
+
+The third reason — and the most personal one — is that I am preparing to apply for a Master's degree (S2) and need supporting documents from a supervisor. coralX is my first serious software project, and I built it to demonstrate what I am capable of. It is not a finished or perfect piece of work, but it is honest evidence of how I approach a real problem: independently, from scratch, and with the intent to make something genuinely useful for the research community.
+
+If you are a researcher or academic who works in marine biology or related fields and would be open to becoming my supervisor, please do not hesitate to reach out.
+
+---
+
 ## Why coralX?
 
 CPCe is the de facto standard tool for benthic point count analysis, but it was built in Visual Basic (2006), runs only on Windows, and requires Microsoft Excel. coralX modernizes the workflow:
@@ -43,22 +57,22 @@ CPCe is the de facto standard tool for benthic point count analysis, but it was 
 
 ### Requirements
 
-- Python 3.10+
+- Python 3.10 or newer
 - Linux, macOS, or Windows
+- Git (to download the code)
 
-### Install
+### Quick Install
 
 ```bash
 git clone https://github.com/padreon/coralx
 cd coralx
+python3 -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-### Run
-
-```bash
 python -m src.main
 ```
+
+For a step-by-step guide covering **Windows, macOS, and Linux** (including installing Python and Git from scratch), see the **[User Guide](docs/user-guide.md)**.
 
 ### GitHub Codespaces
 
@@ -66,8 +80,6 @@ python -m src.main
 2. Wait for `postCreateCommand` to finish
 3. Open port **6080** in your browser (password: `coral`) — this is the noVNC desktop
 4. In the terminal, run `python -m src.main`
-
-For the full walkthrough, see the **[User Guide](docs/user-guide.md)**.
 
 ---
 
@@ -100,7 +112,7 @@ coralX/
 │   ├── train_colab.ipynb          # Google Colab notebook for training with augmentation
 │   └── training_config.yaml.example
 ├── docs/
-│   ├── user-guide.md              # Step-by-step guide for end users
+│   ├── user-guide.md              # Installation + step-by-step guide for end users
 │   └── contributing.md            # Developer setup and contribution guide
 └── requirements.txt
 ```
@@ -138,6 +150,12 @@ coralX/
 ## Contributing
 
 See **[docs/contributing.md](docs/contributing.md)** for the full guide.
+
+### Dataset Contribution
+
+The AI auto-label feature is currently trained on a very limited dataset. If you have annotated underwater transect photos — or are willing to contribute coral imagery — I would love to hear from you. More data directly improves the accuracy of the auto-label model for everyone using coralX.
+
+Feel free to reach out if you are interested in contributing data or collaborating on this.
 
 ---
 

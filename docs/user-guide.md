@@ -8,6 +8,11 @@ This guide walks you through installing and using coralX to perform benthic poin
 
 1. [What is Point Count?](#1-what-is-point-count)
 2. [Installation](#2-installation)
+   - [Windows](#windows)
+   - [macOS](#macos)
+   - [Linux (Ubuntu / Debian)](#linux-ubuntu--debian)
+   - [Linux (Fedora / RHEL)](#linux-fedora--rhel)
+   - [Linux (Arch / Manjaro)](#linux-arch--manjaro)
 3. [Creating Your First Project](#3-creating-your-first-project)
 4. [Adding Images](#4-adding-images)
 5. [Generating Points](#5-generating-points)
@@ -16,12 +21,13 @@ This guide walks you through installing and using coralX to perform benthic poin
 8. [Viewing Statistics](#8-viewing-statistics)
 9. [Exporting Results](#9-exporting-results)
 10. [Coral Codes Reference](#10-coral-codes-reference)
+11. [Troubleshooting](#11-troubleshooting)
 
 ---
 
 ## 1. What is Point Count?
 
-The **point count method** (also known as Point Intercept Transect) is a standard technique for measuring the coverage of different benthic organisms (corals, algae, rubble, etc.) on a reef.
+The **point count method** (also called Point Intercept Transect) is a standard technique for measuring how much of a reef is covered by corals, algae, rubble, and other organisms.
 
 The process:
 1. Take photos along a transect line underwater
@@ -35,36 +41,341 @@ coralX automates steps 2–4 and replaces the legacy CPCe software.
 
 ## 2. Installation
 
-### Option A — Run Locally (Recommended)
+coralX runs from source code using Python. This section explains everything from scratch — you do not need any prior programming experience.
 
-**Requirements:** Python 3.10 or newer. Download from [python.org](https://python.org).
+> **What you need to know about the terminal**
+> The "terminal" (on macOS/Linux) or "Command Prompt / PowerShell" (on Windows) is a text-based window where you type commands. You will use it to download and run coralX. Every command in this guide is meant to be typed exactly as shown, then press **Enter** to run it.
 
-```bash
-# 1. Download coralX
+---
+
+### Windows
+
+#### Step 1 — Install Python
+
+1. Open your web browser and go to **python.org** → click **Downloads** → click the button for the latest **Python 3.11.x** or **Python 3.12.x** release (either is fine).
+2. Run the downloaded `.exe` file.
+3. On the first screen of the installer, **check the box that says "Add Python to PATH"** before clicking anything else. This is the most important step — without it, Python will not be found from the terminal.
+
+   ![Add Python to PATH checkbox is at the bottom of the first installer screen]
+
+4. Click **Install Now** and wait for it to finish.
+5. At the end, click **"Disable path length limit"** if it appears (recommended).
+6. Click **Close**.
+
+**Verify Python is installed:** Open Command Prompt (press `Win + R`, type `cmd`, press Enter) and run:
+```
+python --version
+```
+You should see something like `Python 3.11.9`. If you see an error, repeat from step 3 and make sure the PATH checkbox was checked.
+
+#### Step 2 — Install Git
+
+Git is the tool used to download coralX from the internet.
+
+1. Go to **git-scm.com** → click **Download for Windows**.
+2. Run the downloaded `.exe` file.
+3. Click **Next** through all the installer screens — the default options are fine.
+4. Click **Install**, then **Finish**.
+
+**Verify Git is installed:**
+```
+git --version
+```
+You should see something like `git version 2.45.2.windows.1`.
+
+> **Alternative — download without Git:** If you prefer not to install Git, go to the coralX GitHub page, click the green **Code** button, then **Download ZIP**. Extract the ZIP file to your Desktop.
+
+#### Step 3 — Download coralX
+
+Open **Command Prompt** and run these commands one at a time:
+```
+cd %USERPROFILE%\Desktop
 git clone https://github.com/padreon/coralx
 cd coralx
+```
 
-# 2. (Recommended) Create a virtual environment
+After this, a folder called `coralx` will be on your Desktop.
+
+#### Step 4 — Create a Virtual Environment
+
+A virtual environment keeps coralX's dependencies isolated from the rest of your computer. This prevents conflicts with other software.
+
+```
 python -m venv venv
-source venv/bin/activate        # macOS / Linux
-venv\Scripts\activate           # Windows
+```
 
-# 3. Install dependencies
+Then activate it:
+```
+venv\Scripts\activate
+```
+
+Your prompt will change to show `(venv)` at the beginning — this means the virtual environment is active. **You must activate the virtual environment every time you open a new Command Prompt to run coralX.**
+
+> **PowerShell users:** If you use PowerShell instead of Command Prompt, use `venv\Scripts\Activate.ps1`. If you get an error about execution policy, run `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` first.
+
+#### Step 5 — Install Dependencies
+
+With the virtual environment active, run:
+```
 pip install -r requirements.txt
+```
 
-# 4. Run
+This downloads and installs all the libraries coralX needs. It may take **5–15 minutes** depending on your internet connection. You will see a lot of text — this is normal.
+
+#### Step 6 — Run coralX
+
+```
 python -m src.main
 ```
 
-### Option B — GitHub Codespaces (No local install needed)
+The coralX window will open. 
 
-1. Click **Code → Open with Codespaces** on the GitHub repo page
-2. Wait for the environment to set up (about 1–2 minutes)
-3. In the **Ports** tab, open port **6080** in your browser
-4. Enter the password: `coral`
-5. In the terminal, run: `python -m src.main`
+> **Every time you want to run coralX in the future:** Open Command Prompt, navigate to the coralx folder (`cd %USERPROFILE%\Desktop\coralx`), activate the virtual environment (`venv\Scripts\activate`), then run `python -m src.main`.
 
-The app will appear in the browser window.
+---
+
+### macOS
+
+#### Step 1 — Open the Terminal
+
+Press **Cmd + Space**, type `Terminal`, and press Enter. The Terminal is the command-line interface on macOS.
+
+#### Step 2 — Install Homebrew (recommended)
+
+Homebrew is a package manager that makes it easy to install developer tools on macOS.
+
+Open Terminal and paste this command, then press Enter:
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+Follow the on-screen instructions. You will be asked for your Mac's password (it won't show as you type — this is normal). This may take 5–10 minutes.
+
+> **Apple Silicon Macs (M1/M2/M3/M4):** After Homebrew installs, it will tell you to run two commands to add it to your PATH. Run those commands before continuing.
+
+#### Step 3 — Install Python
+
+With Homebrew installed, run:
+```bash
+brew install python@3.11
+```
+
+> **Alternative (without Homebrew):** Go to python.org → Downloads → download the macOS installer for Python 3.11.x. Run the `.pkg` file and follow the installer.
+
+**Verify Python is installed:**
+```bash
+python3 --version
+```
+You should see `Python 3.11.x`.
+
+#### Step 4 — Install Git
+
+Git is usually already on macOS. Check:
+```bash
+git --version
+```
+
+If macOS asks you to install **Command Line Developer Tools**, click **Install** and wait for it to finish. Then run `git --version` again.
+
+With Homebrew you can also run `brew install git` to get the latest version.
+
+#### Step 5 — Download coralX
+
+```bash
+cd ~/Desktop
+git clone https://github.com/padreon/coralx
+cd coralx
+```
+
+> **Alternative:** Go to the GitHub page → **Code** → **Download ZIP** → extract to Desktop.
+
+#### Step 6 — Create a Virtual Environment
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+Your prompt will change to show `(venv)`. **Activate the virtual environment every time you open a new Terminal to run coralX.**
+
+#### Step 7 — Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+This may take 5–15 minutes.
+
+#### Step 8 — Run coralX
+
+```bash
+python -m src.main
+```
+
+The coralX window will open.
+
+> **Every time you want to run coralX in the future:** Open Terminal → `cd ~/Desktop/coralx` → `source venv/bin/activate` → `python -m src.main`.
+
+> **macOS security warning:** On first launch macOS may show "coralX cannot be opened because it is from an unidentified developer" — this does not apply to running from source. If you see any other security prompt, go to **System Settings → Privacy & Security** and click **Open Anyway**.
+
+---
+
+### Linux (Ubuntu / Debian)
+
+These steps work on Ubuntu 22.04, Ubuntu 24.04, Debian 12, and similar distributions.
+
+#### Step 1 — Open a Terminal
+
+Press **Ctrl + Alt + T**, or search for "Terminal" in your application menu.
+
+#### Step 2 — Check Your Python Version
+
+```bash
+python3 --version
+```
+
+coralX requires Python 3.10 or newer. Ubuntu 22.04 comes with Python 3.10; Ubuntu 24.04 comes with Python 3.12. If your version is older than 3.10, follow the instructions below under "Older Ubuntu versions."
+
+#### Step 3 — Install Python, pip, venv, and Git
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-pip python3-venv git
+```
+
+You will be asked for your password. Type it and press Enter (it won't show — this is normal).
+
+> **Older Ubuntu versions (20.04 or earlier):** Python 3.8 is the default, which is too old. Install a newer version:
+> ```bash
+> sudo apt install -y software-properties-common
+> sudo add-apt-repository ppa:deadsnakes/ppa
+> sudo apt update
+> sudo apt install -y python3.11 python3.11-venv python3.11-distutils
+> ```
+> Then use `python3.11` instead of `python3` in the steps below.
+
+#### Step 4 — Install Qt System Libraries
+
+PyQt6 requires these system libraries to display the graphical interface:
+
+```bash
+sudo apt install -y \
+  libxcb-cursor0 \
+  libxcb-icccm4 \
+  libxcb-image0 \
+  libxcb-keysyms1 \
+  libxcb-randr0 \
+  libxcb-render-util0 \
+  libxcb-shape0 \
+  libxcb-xinerama0 \
+  libxcb-xkb1 \
+  libxkbcommon-x11-0 \
+  libgl1
+```
+
+> **Why these are needed:** The Qt GUI toolkit (used by coralX) depends on the X11 display system. These packages are the "glue" between Qt and your desktop environment.
+
+#### Step 5 — Download coralX
+
+```bash
+cd ~/Desktop
+git clone https://github.com/padreon/coralx
+cd coralx
+```
+
+> **Alternative:** Go to the GitHub page → **Code** → **Download ZIP** → extract to Desktop.
+
+#### Step 6 — Create a Virtual Environment
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+Your prompt will change to show `(venv)`. **Activate the virtual environment every time you open a new Terminal to run coralX.**
+
+#### Step 7 — Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+This may take 5–15 minutes.
+
+#### Step 8 — Run coralX
+
+```bash
+python -m src.main
+```
+
+The coralX window will open.
+
+> **If you see "could not connect to display" or "cannot connect to X server":** Run `export DISPLAY=:0` before the Python command, or check that your desktop environment is running.
+
+> **Every time you want to run coralX in the future:** Open Terminal → `cd ~/Desktop/coralx` → `source venv/bin/activate` → `python -m src.main`.
+
+---
+
+### Linux (Fedora / RHEL)
+
+#### Step 1 — Install Python, pip, and Git
+
+```bash
+sudo dnf install -y python3 python3-pip git
+```
+
+#### Step 2 — Install Qt System Libraries
+
+```bash
+sudo dnf install -y \
+  xcb-util-cursor \
+  xcb-util-image \
+  xcb-util-keysyms \
+  xcb-util-renderutil \
+  xcb-util-wm \
+  libxkbcommon-x11 \
+  mesa-libGL
+```
+
+#### Step 3 — Download, Set Up, and Run
+
+```bash
+cd ~/Desktop
+git clone https://github.com/padreon/coralx
+cd coralx
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python -m src.main
+```
+
+---
+
+### Linux (Arch / Manjaro)
+
+#### Step 1 — Install Python, pip, and Git
+
+```bash
+sudo pacman -S python python-pip git
+```
+
+#### Step 2 — Install Qt System Libraries
+
+```bash
+sudo pacman -S xcb-util-cursor xcb-util-image xcb-util-keysyms xcb-util-renderutil xcb-util-wm libxkbcommon-x11 mesa
+```
+
+#### Step 3 — Download, Set Up, and Run
+
+```bash
+cd ~/Desktop
+git clone https://github.com/padreon/coralx
+cd coralx
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python -m src.main
+```
 
 ---
 
@@ -142,11 +453,11 @@ coralX includes an AI feature that can automatically label points using a YOLOv8
 A trained YOLOv8 `.pt` model file. Two options:
 
 - **Use the included model** — `data/data-training.pt` (7 coral morphology classes: branching, encrusting, foliose, massive, mushroom, submassive, tabulate)
-- **Train your own** — see the [Training Your Own Model](#training-your-own-model) section below
+- **Train your own** — see the [Training Guide](training-guide.md)
 
 ### Running AI auto-label
 
-1. Go to **Image → AI Auto-Label…** (or click the **🤖 AI Label** button in the toolbar)
+1. Go to **Image → AI Auto-Label…** (or click the **AI Label** button in the toolbar)
 2. Click **Browse…** and select your `.pt` model file
    - The model loads automatically and the class mapping table appears
 3. Set the **scope**:
@@ -165,10 +476,6 @@ A trained YOLOv8 `.pt` model file. Two options:
 A progress dialog shows each point being processed. You can cancel at any time.
 
 > **Note:** The AI is a helper, not a replacement for expert identification. Always review AI-labeled points, especially at lower confidence thresholds.
-
-### Training your own model
-
-See the full **[Training Guide](training-guide.md)** for step-by-step instructions including Roboflow dataset setup, Google Colab training (free GPU), and local training.
 
 ---
 
@@ -224,24 +531,65 @@ You can add your own codes or modify these in **Edit → Coral Codes**.
 
 ---
 
-## Troubleshooting
+## 11. Troubleshooting
 
-**The app doesn't start / blank screen**
-- Make sure you're using Python 3.10 or newer: `python --version`
-- On Linux, ensure the display is set: `export DISPLAY=:0` before running
-- In Codespaces, open port 6080 in the browser before running the app
+### coralX won't start / "python not found"
 
-**"ultralytics not installed" when using AI auto-label**
-- Install ultralytics in the same Python environment as coralX:
-  ```bash
-  pip install "ultralytics>=8.0.0"
-  ```
-- Make sure you activate your virtual environment first if you use one
+- **Windows:** Make sure Python was installed with "Add Python to PATH" checked. Reinstall Python if needed and check the box.
+- **macOS/Linux:** Use `python3` instead of `python`.
+- Check which Python you have: `python --version` or `python3 --version`
 
-**Points disappeared after reopening project**
-- Check that the image files are still at the same path where they were when the project was saved
-- coralX stores absolute file paths — if you moved the images, use **Edit → Relink Images**
+### "No module named 'PyQt6'" or "No module named 'cv2'"
 
-**Export produces an empty file**
-- Make sure at least some points are labeled before exporting
-- Check that you have write permission to the export destination folder
+The virtual environment is not active or dependencies weren't installed. Run:
+```bash
+# macOS / Linux
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Windows
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### Blank window or app crashes immediately (Linux)
+
+The Qt system libraries are missing. Install them:
+```bash
+# Ubuntu / Debian
+sudo apt install -y libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+  libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+  libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 \
+  libxkbcommon-x11-0 libgl1
+```
+
+### "cannot connect to X server" (Linux)
+
+The display variable is not set. Run:
+```bash
+export DISPLAY=:0
+python -m src.main
+```
+
+### "ultralytics not installed" when using AI auto-label
+
+Install ultralytics in your virtual environment:
+```bash
+pip install "ultralytics>=8.0.0"
+```
+Make sure the virtual environment is active first.
+
+### Points disappeared after reopening the project
+
+coralX stores **absolute file paths** to images. If you moved the image files, use **Edit → Relink Images** to update the paths.
+
+### Export produces an empty file
+
+- Make sure at least some points are labeled before exporting.
+- Check that you have write permission to the export destination folder.
+
+### pip install is very slow or stalls
+
+- Check your internet connection.
+- Try upgrading pip first: `pip install --upgrade pip`
+- If a specific package (e.g. `torch`) is slow, this is normal — PyTorch is ~2 GB.

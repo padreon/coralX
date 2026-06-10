@@ -36,33 +36,19 @@ coralX uses YOLOv8 for per-point crop classification and detection. Users supply
 
 ## Training Data Sources
 
-The following publicly available datasets are commonly used to train coral reef classification models compatible with coralX. We thank the institutions and researchers who maintain them.
+The following datasets were used to train the coral reef classification model bundled with coralX. We thank the institutions and researchers who collected and annotated this data.
 
-### CoralNet
+### Lini Foundation — Lini Coral Forms 3.0
 
-**CoralNet** is the primary community platform for benthic image annotation and provides thousands of labeled coral reef images from reef monitoring programs worldwide.
+The primary training dataset is **Lini Coral Forms 3.0**, contributed by the **Lini Foundation** — an Indonesian marine conservation organization dedicated to coral reef research and community-based monitoring.
 
-> Beijbom, O., Edmunds, P. J., Rosman, J. H., Tor, D. G., & Kriegman, D. J. (2015).
-> Towards automated annotation of benthic survey images: Variability of human experts
-> and operational modes of automation.
-> *PLOS ONE*, 10(7), e0130312.
-> https://doi.org/10.1371/journal.pone.0130312
+> Lini Foundation. (2024). *Lini Coral Forms 3.0* [Dataset].
+> Roboflow Universe.
+> https://universe.roboflow.com/lini-foundation/lini-coral-forms-3.0
 
-Website: [https://coralnet.ucsd.edu](https://coralnet.ucsd.edu)
+Dataset: [universe.roboflow.com/lini-foundation/lini-coral-forms-3.0](https://universe.roboflow.com/lini-foundation/lini-coral-forms-3.0)
 
-### NOAA National Coral Reef Monitoring Program (NCRMP)
-
-The **NOAA NCRMP** provides standardized benthic survey data and imagery from U.S. coral reef jurisdictions, including the Florida Reef Tract, Hawaii, and the U.S. Pacific territories.
-
-> National Oceanic and Atmospheric Administration (NOAA). National Coral Reef Monitoring Program (NCRMP).
-> https://www.coris.noaa.gov/monitoring/
-
-### ReefCloud
-
-**ReefCloud** is an open platform by the Australian Institute of Marine Science (AIMS) for storing, analysing, and sharing reef image data, including AI-assisted annotation.
-
-> Australian Institute of Marine Science. (2022). ReefCloud — AI-assisted coral reef monitoring.
-> https://reefcloud.ai
+We are grateful to the Lini Foundation for making this labeled coral image dataset publicly available, enabling open AI-assisted reef monitoring.
 
 ---
 

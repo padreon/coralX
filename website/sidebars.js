@@ -26,6 +26,11 @@ const sidebars = {
       id: 'citations',
       label: 'Citations',
     },
+    {
+      type: 'doc',
+      id: 'acknowledgements',
+      label: 'Acknowledgements',
+    },
   ],
 };
 

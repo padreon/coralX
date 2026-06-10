@@ -76,6 +76,7 @@ const config = {
               { label: 'User Guide', to: '/user-guide' },
               { label: 'Training Guide', to: '/training-guide' },
               { label: 'Contributing', to: '/contributing' },
+              { label: 'Acknowledgements', to: '/acknowledgements' },
             ],
           },
           {

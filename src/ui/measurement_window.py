@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
@@ -10,10 +9,10 @@ from PyQt6.QtWidgets import (
     QListWidget, QListWidgetItem, QPushButton, QLabel, QSlider,
     QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog,
     QMessageBox, QAbstractItemView, QSizePolicy, QGroupBox,
-    QStatusBar,
+    QStatusBar, QToolBar,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QAction, QFont
 
 from src.models.project import Project, Station, ImageAnnotation, Measurement
 from src.ui.image_canvas import ImageCanvas
@@ -28,6 +27,8 @@ class MeasurementWindow(QMainWindow):
 
     def __init__(self, project: Project | None = None, parent=None):
         super().__init__(parent)
+        # Ensure this is an independent top-level window with full chrome
+        self.setWindowFlags(Qt.WindowType.Window)
         self.setWindowTitle("coralX — Fragment Measurement")
         self.resize(1280, 800)
 
@@ -37,8 +38,71 @@ class MeasurementWindow(QMainWindow):
 
         self._current_ann: ImageAnnotation | None = None
 
+        self._build_menu()
+        self._build_toolbar()
         self._build_ui()
         self._refresh_image_list()
+
+    # ------------------------------------------------------------------ menu
+
+    def _build_menu(self):
+        mb = self.menuBar()
+
+        # File menu
+        file_menu = mb.addMenu("File")
+        act_new  = QAction("New Project",    self)
+        act_open = QAction("Open Project…",  self)
+        act_save = QAction("Save Project",   self)
+        act_saveas = QAction("Save As…",     self)
+        act_export = QAction("Export Excel…", self)
+        act_exit = QAction("Exit",           self)
+
+        act_new.setShortcut("Ctrl+N")
+        act_open.setShortcut("Ctrl+O")
+        act_save.setShortcut("Ctrl+S")
+        act_saveas.setShortcut("Ctrl+Shift+S")
+
+        act_new.triggered.connect(self._new_project)
+        act_open.triggered.connect(self._open_project)
+        act_save.triggered.connect(self._save_project)
+        act_saveas.triggered.connect(self._save_project_as)
+        act_export.triggered.connect(self._export_excel)
+        act_exit.triggered.connect(self.close)
+
+        file_menu.addAction(act_new)
+        file_menu.addAction(act_open)
+        file_menu.addSeparator()
+        file_menu.addAction(act_save)
+        file_menu.addAction(act_saveas)
+        file_menu.addSeparator()
+        file_menu.addAction(act_export)
+        file_menu.addSeparator()
+        file_menu.addAction(act_exit)
+
+        # Image menu
+        img_menu = mb.addMenu("Image")
+        act_add    = QAction("Add Images…",      self)
+        act_calib  = QAction("Calibrate Scale…", self)
+        act_add.triggered.connect(self._add_images)
+        act_calib.triggered.connect(self._calibrate)
+        img_menu.addAction(act_add)
+        img_menu.addAction(act_calib)
+
+    # ------------------------------------------------------------------ toolbar
+
+    def _build_toolbar(self):
+        tb = QToolBar("Main Toolbar")
+        tb.setMovable(False)
+        self.addToolBar(tb)
+
+        tb.addAction(QAction("New", self, triggered=self._new_project))
+        tb.addAction(QAction("Open", self, triggered=self._open_project))
+        tb.addAction(QAction("Save", self, triggered=self._save_project))
+        tb.addSeparator()
+        tb.addAction(QAction("+ Add Images", self, triggered=self._add_images))
+        tb.addAction(QAction("📏 Calibrate", self, triggered=self._calibrate))
+        tb.addSeparator()
+        tb.addAction(QAction("Export Excel", self, triggered=self._export_excel))
 
     # ------------------------------------------------------------------ build
 
@@ -61,29 +125,17 @@ class MeasurementWindow(QMainWindow):
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 0)
-        splitter.setSizes([220, 800, 280])
+        splitter.setSizes([200, 820, 260])
 
         self.setStatusBar(QStatusBar())
-        self._show_status("Ready")
+        self._show_status("Ready  |  Select a mode to begin measuring")
 
     def _build_left_panel(self) -> QWidget:
         panel = QWidget()
-        panel.setFixedWidth(220)
+        panel.setFixedWidth(200)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(6)
-
-        # Project buttons
-        btn_new = QPushButton("New Project")
-        btn_open = QPushButton("Open Project")
-        btn_save = QPushButton("Save Project")
-        btn_add = QPushButton("+ Add Images")
-        for b in (btn_new, btn_open, btn_save, btn_add):
-            layout.addWidget(b)
-        btn_new.clicked.connect(self._new_project)
-        btn_open.clicked.connect(self._open_project)
-        btn_save.clicked.connect(self._save_project)
-        btn_add.clicked.connect(self._add_images)
 
         # Image list
         layout.addWidget(QLabel("Images:"))
@@ -91,7 +143,7 @@ class MeasurementWindow(QMainWindow):
         self._img_list.currentRowChanged.connect(self._on_image_selected)
         layout.addWidget(self._img_list)
 
-        # Zoom controls
+        # Zoom
         grp_zoom = QGroupBox("View")
         zoom_layout = QHBoxLayout(grp_zoom)
         zoom_layout.setContentsMargins(4, 4, 4, 4)
@@ -106,12 +158,9 @@ class MeasurementWindow(QMainWindow):
         btn_zf.clicked.connect(lambda: self._canvas.zoom_fit())
         layout.addWidget(grp_zoom)
 
-        # Calibration
+        # Calibration status
         grp_calib = QGroupBox("Calibration")
         calib_layout = QVBoxLayout(grp_calib)
-        btn_calib = QPushButton("📏 Calibrate Scale")
-        btn_calib.clicked.connect(self._calibrate)
-        calib_layout.addWidget(btn_calib)
         self._calib_label = QLabel("Not calibrated")
         self._calib_label.setWordWrap(True)
         self._calib_label.setStyleSheet("color: #aaa; font-size: 10px;")
@@ -122,10 +171,10 @@ class MeasurementWindow(QMainWindow):
         grp_tools = QGroupBox("Measure")
         tools_layout = QVBoxLayout(grp_tools)
 
-        btn_line = QPushButton("📏 Straight Line")
-        btn_poly = QPushButton("〰 Polyline")
+        btn_line    = QPushButton("📏 Straight Line")
+        btn_poly    = QPushButton("〰 Polyline")
         btn_polygon = QPushButton("⬠ Polygon (manual)")
-        btn_magic = QPushButton("🪄 Magic Wand")
+        btn_magic   = QPushButton("🪄 Magic Wand")
         for b in (btn_line, btn_poly, btn_polygon, btn_magic):
             b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             tools_layout.addWidget(b)
@@ -135,7 +184,7 @@ class MeasurementWindow(QMainWindow):
         btn_polygon.clicked.connect(lambda: self._start_measure("polygon"))
         btn_magic.clicked.connect(lambda: self._start_measure("magic"))
 
-        tol_label = QLabel("Magic tolerance:")
+        tol_label = QLabel("Magic wand tolerance:")
         self._tol_slider = QSlider(Qt.Orientation.Horizontal)
         self._tol_slider.setRange(1, 80)
         self._tol_slider.setValue(20)
@@ -153,7 +202,7 @@ class MeasurementWindow(QMainWindow):
 
     def _build_right_panel(self) -> QWidget:
         panel = QWidget()
-        panel.setFixedWidth(280)
+        panel.setFixedWidth(260)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(6)
@@ -170,17 +219,11 @@ class MeasurementWindow(QMainWindow):
         self._meas_table.setEditTriggers(
             QAbstractItemView.EditTrigger.NoEditTriggers
         )
-        self._meas_table.itemSelectionChanged.connect(self._on_table_selection)
         layout.addWidget(self._meas_table)
 
         btn_delete = QPushButton("Delete Selected")
         btn_delete.clicked.connect(self._delete_measurement)
         layout.addWidget(btn_delete)
-
-        layout.addSpacing(12)
-        btn_export = QPushButton("Export Excel…")
-        btn_export.clicked.connect(self._export_excel)
-        layout.addWidget(btn_export)
         layout.addStretch()
         return panel
 
@@ -192,6 +235,7 @@ class MeasurementWindow(QMainWindow):
         self._current_ann = None
         self._refresh_image_list()
         self._refresh_table()
+        self.setWindowTitle("coralX — Fragment Measurement")
 
     def _open_project(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -205,21 +249,31 @@ class MeasurementWindow(QMainWindow):
                 self._current_ann = None
                 self._refresh_image_list()
                 self._refresh_table()
+                self.setWindowTitle(f"coralX — {self._project.name}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Could not open project:\n{e}")
 
     def _save_project(self):
         path = self._project.save_path
         if not path:
-            path, _ = QFileDialog.getSaveFileName(
-                self, "Save Project", "", "coralX Projects (*.cpce)"
-            )
+            self._save_project_as()
+            return
+        try:
+            self._project.save(path)
+            self._show_status(f"Saved: {path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not save:\n{e}")
+
+    def _save_project_as(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Project As", "", "coralX Projects (*.cpce)"
+        )
         if path:
             try:
                 self._project.save(path)
                 self._show_status(f"Saved: {path}")
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Could not save project:\n{e}")
+                QMessageBox.critical(self, "Error", f"Could not save:\n{e}")
 
     def _add_images(self):
         paths, _ = QFileDialog.getOpenFileNames(
@@ -302,7 +356,7 @@ class MeasurementWindow(QMainWindow):
         if self._current_ann.scale_factor <= 1.0:
             reply = QMessageBox.question(
                 self, "Not Calibrated",
-                "This image is not calibrated. Measurements will be in pixels.\n"
+                "This image has not been calibrated — measurements will be in pixels.\n"
                 "Continue anyway?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
@@ -315,7 +369,6 @@ class MeasurementWindow(QMainWindow):
         self._canvas.set_measure_tolerance(val)
 
     def _on_measurement_drawn(self, measurement: Measurement):
-        """Measurement geometry done — ask user to name the fragment."""
         dlg = MeasurementLabelDialog(measurement, self)
         if dlg.exec() != MeasurementLabelDialog.DialogCode.Accepted:
             return
@@ -324,13 +377,8 @@ class MeasurementWindow(QMainWindow):
             self._current_ann.measurements.append(m)
             self._canvas.set_measurements(self._current_ann.measurements)
             self._refresh_table()
-            self._show_status(
-                f"Saved: {m.label} — {m.value:.3f} "
-                f"{''+m.unit+'²' if m.type=='polygon' else m.unit}"
-            )
-
-    def _on_table_selection(self):
-        self._canvas.update()
+            unit_str = f"{m.unit}²" if m.type == "polygon" else m.unit
+            self._show_status(f"Saved: {m.label} — {m.value:.3f} {unit_str}")
 
     def _refresh_table(self):
         self._meas_table.setRowCount(0)

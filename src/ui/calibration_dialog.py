@@ -3,8 +3,8 @@
 import math
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox,
-    QComboBox, QCheckBox, QPushButton, QWidget,
-    QDialogButtonBox, QSizePolicy,
+    QComboBox, QCheckBox, QPushButton, QWidget, QFrame,
+    QDialogButtonBox, QSizePolicy, QSplitter,
 )
 from PyQt6.QtCore import Qt, QPoint, pyqtSignal
 from PyQt6.QtGui import QPainter, QPen, QColor, QPixmap, QBrush, QFont, QTransform
@@ -13,7 +13,7 @@ from src.models.project import ImageAnnotation
 
 
 POINT_RADIUS = 6
-CANVAS_SIZE = 600   # initial display size
+CANVAS_MIN = 320    # minimum canvas height
 
 
 class _CalibCanvas(QWidget):
@@ -37,7 +37,7 @@ class _CalibCanvas(QWidget):
         self._zoom: float = 1.0
         self._offset = QPoint(0, 0)
 
-        self.setMinimumSize(CANVAS_SIZE, CANVAS_SIZE)
+        self.setMinimumSize(CANVAS_MIN, CANVAS_MIN)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setCursor(Qt.CursorShape.CrossCursor)
 
@@ -204,65 +204,93 @@ class CalibrationDialog(QDialog):
         self._ann = annotation
         self.setWindowTitle("Calibrate Image Scale")
         self.setModal(True)
-        self.resize(700, 820)
-        self.setMinimumSize(500, 600)
+        self.resize(700, 780)
+        self.setMinimumSize(500, 500)
 
         pixmap = QPixmap(annotation.image_path)
         if pixmap.isNull():
-            pixmap = QPixmap(PREVIEW_MAX_SIZE, PREVIEW_MAX_SIZE)
+            pixmap = QPixmap(400, 400)
             pixmap.fill(QColor(40, 40, 40))
 
-        self._canvas = _CalibCanvas(pixmap, self)
-        self._canvas.points_changed.connect(self._on_points_changed)
+        # ---- top pane: canvas + zoom toolbar ----
+        top_pane = QWidget()
+        top_layout = QVBoxLayout(top_pane)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(4)
 
-        # Zoom controls
+        self._lbl_instruction = QLabel(
+            "Click two points on a known feature (e.g. scale bar or ruler), "
+            "then enter the real-world distance below.\n"
+            "Scroll or use ↑/↓ to zoom. Middle-drag to pan."
+        )
+        self._lbl_instruction.setWordWrap(True)
+        top_layout.addWidget(self._lbl_instruction)
+
         zoom_row = QHBoxLayout()
-        btn_zoom_in = QPushButton("↑  Zoom In")
+        btn_zoom_in  = QPushButton("↑  Zoom In")
         btn_zoom_out = QPushButton("↓  Zoom Out")
         btn_zoom_fit = QPushButton("Fit")
         for b in (btn_zoom_in, btn_zoom_out, btn_zoom_fit):
             b.setFixedHeight(26)
             zoom_row.addWidget(b)
+        top_layout.addLayout(zoom_row)
+
+        self._canvas = _CalibCanvas(pixmap, top_pane)
+        self._canvas.points_changed.connect(self._on_points_changed)
+        top_layout.addWidget(self._canvas, stretch=1)
+
         btn_zoom_in.clicked.connect(self._canvas.zoom_in)
         btn_zoom_out.clicked.connect(self._canvas.zoom_out)
         btn_zoom_fit.clicked.connect(self._canvas.zoom_fit)
 
-        # Controls
-        self._lbl_instruction = QLabel(
-            "Step 1: Click two points on a known feature (e.g. scale bar or ruler).\n"
-            "Step 2: Enter the real-world distance between those points."
-        )
-        self._lbl_instruction.setWordWrap(True)
+        # ---- bottom pane: calibration controls ----
+        bottom_pane = QWidget()
+        bottom_pane.setAutoFillBackground(True)   # ensures opaque background
+        bot_layout = QVBoxLayout(bottom_pane)
+        bot_layout.setContentsMargins(8, 8, 8, 8)
+        bot_layout.setSpacing(6)
 
         self._lbl_px_dist = QLabel("Pixel distance: —")
+        bot_layout.addWidget(self._lbl_px_dist)
 
         dist_layout = QHBoxLayout()
         self._spin_dist = QDoubleSpinBox()
         self._spin_dist.setRange(0.01, 100000)
         self._spin_dist.setDecimals(2)
         self._spin_dist.setValue(50.0)
-        self._spin_dist.setSuffix("")
         self._spin_dist.valueChanged.connect(self._update_preview)
 
         self._combo_unit = QComboBox()
         self._combo_unit.addItems(["cm", "m"])
-        idx = 0 if annotation.scale_unit == "cm" else 1
-        self._combo_unit.setCurrentIndex(idx)
+        self._combo_unit.setCurrentIndex(0 if annotation.scale_unit == "cm" else 1)
         self._combo_unit.currentTextChanged.connect(self._update_preview)
 
         dist_layout.addWidget(QLabel("Real-world distance:"))
         dist_layout.addWidget(self._spin_dist)
         dist_layout.addWidget(self._combo_unit)
         dist_layout.addStretch()
+        bot_layout.addLayout(dist_layout)
 
         self._lbl_scale_preview = QLabel("Scale factor: —")
-        self._lbl_area_preview = QLabel("Photo area: —")
+        self._lbl_area_preview  = QLabel("Photo area: —")
+        bot_layout.addWidget(self._lbl_scale_preview)
+        bot_layout.addWidget(self._lbl_area_preview)
 
-        self._chk_apply_all = QCheckBox("Apply this scale to all images in this station")
-        self._chk_apply_all.setChecked(False)
+        if annotation.scale_factor > 1.0:
+            self._lbl_scale_preview.setText(
+                f"Current: {annotation.scale_factor:.2f} px/{annotation.scale_unit}"
+            )
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        bot_layout.addWidget(sep)
 
         btn_reset = QPushButton("Reset points")
         btn_reset.clicked.connect(self._canvas.reset)
+        bot_layout.addWidget(btn_reset)
+
+        self._chk_apply_all = QCheckBox("Apply this scale to all images in this station")
+        bot_layout.addWidget(self._chk_apply_all)
 
         self._buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -273,25 +301,19 @@ class CalibrationDialog(QDialog):
             _ok_btn.setEnabled(False)
         self._buttons.accepted.connect(self._apply)
         self._buttons.rejected.connect(self.reject)
+        bot_layout.addWidget(self._buttons)
 
-        # Pre-fill existing calibration
-        if annotation.scale_factor > 1.0:
-            self._lbl_scale_preview.setText(
-                f"Current: {annotation.scale_factor:.2f} px/{annotation.scale_unit}"
-            )
+        # ---- splitter: canvas (top) + controls (bottom) ----
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.addWidget(top_pane)
+        splitter.addWidget(bottom_pane)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([520, 260])
 
-        layout = QVBoxLayout(self)
-        layout.addWidget(self._lbl_instruction)
-        layout.addLayout(zoom_row)
-        layout.addWidget(self._canvas)
-        layout.addWidget(self._lbl_px_dist)
-        layout.addLayout(dist_layout)
-        layout.addWidget(self._lbl_scale_preview)
-        layout.addWidget(self._lbl_area_preview)
-        layout.addWidget(btn_reset)
-        layout.addWidget(self._chk_apply_all)
-        layout.addWidget(self._buttons)
-        self.setLayout(layout)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(6, 6, 6, 6)
+        root.addWidget(splitter)
 
     def _on_points_changed(self, pts: list):
         px_dist = self._canvas.pixel_distance()

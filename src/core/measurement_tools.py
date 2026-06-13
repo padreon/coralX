@@ -39,9 +39,13 @@ def polygon_area(points: list[tuple[float, float]],
 def magic_wand_select(image_path: str, seed_px: int, seed_py: int,
                       tolerance: int) -> Optional[list[tuple[float, float]]]:
     """
-    Flood-fill from (seed_px, seed_py) with the given color tolerance,
-    then return the largest contour as image-space (x, y) points.
-    Returns None if the image cannot be read or no contour is found.
+    Select pixels similar in color to the seed point using flood-fill.
+
+    Uses FLOODFILL_FIXED_RANGE so every pixel is compared to the *seed*
+    color (not its neighbors) — this gives true magic-wand behaviour where
+    only pixels within `tolerance` of the clicked color are selected.
+
+    Returns the largest contour as image-space (x, y) points, or None.
     """
     try:
         img = cv2.imread(image_path)
@@ -52,34 +56,42 @@ def magic_wand_select(image_path: str, seed_px: int, seed_py: int,
         seed_px = max(0, min(w - 1, seed_px))
         seed_py = max(0, min(h - 1, seed_py))
 
-        mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
-        flood_img = img.copy()
         tol = max(1, int(tolerance))
         lo = (tol, tol, tol)
         hi = (tol, tol, tol)
-        # FLOODFILL_MASK_ONLY: write to mask only, not the image.
-        # Upper byte of flags = mask fill value (255).
-        flags = cv2.FLOODFILL_MASK_ONLY | (255 << 8)
-        cv2.floodFill(flood_img, mask, (seed_px, seed_py),
-                      (0, 255, 0), lo, hi, flags)
 
-        # Strip the 1-pixel padding floodFill requires
-        filled_mask = mask[1:h + 1, 1:w + 1]
+        # floodFill requires mask 2px larger in each direction
+        mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
+        flood_img = img.copy()
+
+        # FLOODFILL_FIXED_RANGE: compare against seed pixel, not neighbors.
+        # Without this flag the fill spreads along gradients and can cover
+        # the entire image. (255 << 8) writes 255 into filled mask cells.
+        flags = (cv2.FLOODFILL_FIXED_RANGE |
+                 cv2.FLOODFILL_MASK_ONLY |
+                 (255 << 8))
+
+        cv2.floodFill(flood_img, mask, (seed_px, seed_py),
+                      (0, 0, 0), lo, hi, flags)
+
+        # Strip the 1-pixel padding required by floodFill
+        region = mask[1:h + 1, 1:w + 1]
 
         contours, _ = cv2.findContours(
-            filled_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            region, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
         if not contours:
             return None
 
         largest = max(contours, key=cv2.contourArea)
-        if cv2.contourArea(largest) < 4:
+        if cv2.contourArea(largest) < 9:
             return None
 
-        # Simplify contour — epsilon ~0.5% of perimeter keeps shape accurate
+        # Simplify — 0.5 % of perimeter keeps shape faithful
         perimeter = cv2.arcLength(largest, True)
-        epsilon = max(1.0, 0.005 * perimeter)
+        epsilon = max(2.0, 0.005 * perimeter)
         approx = cv2.approxPolyDP(largest, epsilon, True)
+
         if len(approx) < 3:
             return None
 

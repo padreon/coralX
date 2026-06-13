@@ -28,7 +28,7 @@ class MeasurementWindow(QMainWindow):
     def __init__(self, project: Project | None = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("coralX — Fragment Measurement")
-        self.resize(1280, 800)
+        self._fit_to_screen()
 
         self._project: Project = project or Project(name="Untitled Measurement")
         if not self._project.stations:
@@ -40,6 +40,22 @@ class MeasurementWindow(QMainWindow):
         self._build_toolbar()
         self._build_ui()
         self._refresh_image_list()
+
+    def _fit_to_screen(self) -> None:
+        """Size and center the window so it fits within the available screen area."""
+        from PyQt6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            # Leave ~60 px margin for WM title bar + any taskbar
+            w = min(1280, avail.width()  - 20)
+            h = min(760,  avail.height() - 60)
+            self.resize(w, h)
+            x = avail.x() + max(0, (avail.width()  - w) // 2)
+            y = avail.y() + max(10, (avail.height() - h) // 2)
+            self.move(x, y)
+        else:
+            self.resize(1200, 700)
 
     # ------------------------------------------------------------------ menu
 
@@ -130,10 +146,24 @@ class MeasurementWindow(QMainWindow):
 
     def _build_left_panel(self) -> QWidget:
         panel = QWidget()
-        panel.setFixedWidth(200)
+        panel.setFixedWidth(210)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(6)
+        layout.setSpacing(4)
+
+        # Project buttons — always visible
+        btn_new  = QPushButton("New Project")
+        btn_open = QPushButton("Open Project…")
+        btn_save = QPushButton("Save Project")
+        btn_add  = QPushButton("+ Add Images")
+        btn_add.setStyleSheet("font-weight: bold;")
+        for b in (btn_new, btn_open, btn_save, btn_add):
+            b.setFixedHeight(26)
+            layout.addWidget(b)
+        btn_new.clicked.connect(self._new_project)
+        btn_open.clicked.connect(self._open_project)
+        btn_save.clicked.connect(self._save_project)
+        btn_add.clicked.connect(self._add_images)
 
         # Image list
         layout.addWidget(QLabel("Images:"))

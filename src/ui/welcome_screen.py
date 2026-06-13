@@ -3,140 +3,119 @@
 from __future__ import annotations
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QFrame, QSizePolicy,
+    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFrame,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 
-class _ModeCard(QFrame):
-    """Clickable card that represents one app mode."""
-
-    clicked = pyqtSignal()
-
-    def __init__(self, icon: str, title: str, description: str, parent=None):
-        super().__init__(parent)
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setLineWidth(2)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedSize(260, 180)
-        self.setStyleSheet("""
-            _ModeCard {
-                border: 2px solid #444;
-                border-radius: 10px;
-                background: #2a2a2a;
-            }
-            _ModeCard:hover {
-                border-color: #4fc3f7;
-                background: #2e3a42;
-            }
-        """)
-
-        layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.setSpacing(8)
-
-        icon_lbl = QLabel(icon)
-        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_font = QFont()
-        icon_font.setPointSize(36)
-        icon_lbl.setFont(icon_font)
-
-        title_lbl = QLabel(title)
-        title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_font = QFont()
-        title_font.setPointSize(13)
-        title_font.setBold(True)
-        title_lbl.setFont(title_font)
-
-        desc_lbl = QLabel(description)
-        desc_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        desc_lbl.setWordWrap(True)
-        desc_lbl.setStyleSheet("color: #aaa;")
-
-        for w in (icon_lbl, title_lbl, desc_lbl):
-            layout.addWidget(w)
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit()
-        super().mousePressEvent(event)
-
-    def enterEvent(self, event):
-        self.setStyleSheet("""
-            _ModeCard {
-                border: 2px solid #4fc3f7;
-                border-radius: 10px;
-                background: #2e3a42;
-            }
-        """)
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        self.setStyleSheet("""
-            _ModeCard {
-                border: 2px solid #444;
-                border-radius: 10px;
-                background: #2a2a2a;
-            }
-        """)
-        super().leaveEvent(event)
-
-
-class WelcomeScreen(QWidget):
-    """Mode selector shown on startup. Emits mode_selected('point_count'|'measurement')."""
-
-    mode_selected = pyqtSignal(str)  # 'point_count' or 'measurement'
+class WelcomeScreen(QDialog):
+    """
+    Blocking mode-selector shown before the main window is created.
+    Call exec(); if Accepted, read get_mode() to determine which window to open.
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("coralX")
-        self.setMinimumSize(640, 400)
-        self.setStyleSheet("background: #1e1e1e; color: #eee;")
+        self.setMinimumSize(600, 380)
+        self.setModal(True)
+        self._mode: str = "point_count"
+        self._build_ui()
+
+    def get_mode(self) -> str:
+        return self._mode
+
+    def _build_ui(self):
+        self.setStyleSheet("""
+            QDialog { background: #1e1e1e; color: #eee; }
+            QLabel  { color: #eee; background: transparent; }
+        """)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(40, 30, 40, 30)
+        layout.setSpacing(20)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.setSpacing(24)
 
-        # Logo / title
-        title_lbl = QLabel("coralX")
-        title_font = QFont()
-        title_font.setPointSize(28)
-        title_font.setBold(True)
-        title_lbl.setFont(title_font)
-        title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_lbl.setStyleSheet("color: #4fc3f7;")
-        layout.addWidget(title_lbl)
+        title = QLabel("coralX")
+        f = QFont()
+        f.setPointSize(28)
+        f.setBold(True)
+        title.setFont(f)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("color: #4fc3f7; background: transparent;")
+        layout.addWidget(title)
 
-        sub_lbl = QLabel("Coral Reef Research Tool — choose a mode to begin")
-        sub_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sub_lbl.setStyleSheet("color: #888;")
-        layout.addWidget(sub_lbl)
+        sub = QLabel("Choose a mode to begin")
+        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sub.setStyleSheet("color: #888; background: transparent;")
+        layout.addWidget(sub)
 
-        # Mode cards
-        cards_row = QHBoxLayout()
-        cards_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        cards_row.setSpacing(32)
+        cards = QHBoxLayout()
+        cards.setSpacing(28)
+        cards.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        cards.addWidget(self._card(
+            "🎯", "Coral Point Count",
+            "Random-point sampling\nfor benthic coverage\nestimation",
+            "point_count",
+        ))
+        cards.addWidget(self._card(
+            "📏", "Fragment Measurement",
+            "Measure coral height &\narea for growth\nmonitoring",
+            "measurement",
+        ))
+        layout.addLayout(cards)
 
-        card_point = _ModeCard(
-            "🎯",
-            "Coral Point Count",
-            "Random point sampling\nfor benthic coverage\nestimation",
-        )
-        card_measure = _ModeCard(
-            "📏",
-            "Fragment Measurement",
-            "Measure coral height\nand area for growth\nmonitoring",
-        )
-        card_point.clicked.connect(lambda: self.mode_selected.emit("point_count"))
-        card_measure.clicked.connect(lambda: self.mode_selected.emit("measurement"))
+    def _card(self, icon: str, title: str, desc: str, mode: str) -> QFrame:
+        frame = QFrame()
+        frame.setFixedSize(230, 170)
+        frame.setStyleSheet("""
+            QFrame {
+                border: 2px solid #444;
+                border-radius: 10px;
+                background: #2a2a2a;
+            }
+            QFrame:hover {
+                border-color: #4fc3f7;
+                background: #2e3a42;
+            }
+            QLabel { background: transparent; color: #eee; }
+        """)
 
-        cards_row.addWidget(card_point)
-        cards_row.addWidget(card_measure)
-        layout.addLayout(cards_row)
+        vl = QVBoxLayout(frame)
+        vl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        vl.setSpacing(6)
 
-        version_lbl = QLabel("v2.0")
-        version_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        version_lbl.setStyleSheet("color: #555; font-size: 10px;")
-        layout.addWidget(version_lbl)
+        ico = QLabel(icon)
+        ico.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        fi = QFont(); fi.setPointSize(32)
+        ico.setFont(fi)
+
+        ttl = QLabel(title)
+        ttl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ft = QFont(); ft.setPointSize(11); ft.setBold(True)
+        ttl.setFont(ft)
+
+        dsc = QLabel(desc)
+        dsc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dsc.setStyleSheet("color: #aaa; font-size: 10px; background: transparent;")
+
+        btn = QPushButton("Select")
+        btn.setStyleSheet("""
+            QPushButton {
+                background: #4fc3f7; color: #111;
+                border: none; border-radius: 4px;
+                padding: 4px 16px; font-weight: bold;
+            }
+            QPushButton:hover { background: #81d4fa; }
+        """)
+        btn.clicked.connect(lambda: self._select(mode))
+
+        for w in (ico, ttl, dsc, btn):
+            vl.addWidget(w)
+
+        return frame
+
+    def _select(self, mode: str):
+        self._mode = mode
+        self.accept()

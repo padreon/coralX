@@ -30,21 +30,16 @@ def main():
     app.setFont(font)
 
     welcome = WelcomeScreen()
-    main_win: list = []  # mutable container so lambda can capture it
+    if welcome.exec() != WelcomeScreen.DialogCode.Accepted:
+        sys.exit(0)
 
-    def _on_mode(mode: str):
-        welcome.close()
-        if mode == "measurement":
-            w = MeasurementWindow()
-        else:
-            w = MainWindow()
-        main_win.append(w)
-        w.show()
-        w.raise_()
-        w.activateWindow()
+    mode = welcome.get_mode()
+    if mode == "measurement":
+        window = MeasurementWindow()
+    else:
+        window = MainWindow()
 
-    welcome.mode_selected.connect(_on_mode)
-    welcome.show()
+    window.show()
 
     exit_code = app.exec()
     log.info("coralX exiting (code %d)", exit_code)

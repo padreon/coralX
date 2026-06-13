@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 import json
+import uuid
 
 
 @dataclass
@@ -13,6 +14,23 @@ class Point:
 
 
 @dataclass
+class Measurement:
+    id: str
+    type: str                            # "line" | "polyline" | "polygon"
+    label: str                           # fragment name, e.g. "Frag-01"
+    points: list[tuple[float, float]]    # image-space pixel coords [(x, y), ...]
+    value: float                         # length (unit) or area (unit²)
+    unit: str                            # "cm" or "m"
+
+    @staticmethod
+    def new(mtype: str, label: str,
+            points: list[tuple[float, float]],
+            value: float, unit: str) -> "Measurement":
+        return Measurement(id=str(uuid.uuid4()), type=mtype, label=label,
+                           points=points, value=value, unit=unit)
+
+
+@dataclass
 class ImageAnnotation:
     image_path: str
     points: list[Point] = field(default_factory=list)
@@ -20,6 +38,7 @@ class ImageAnnotation:
     image_height: int = 0
     scale_factor: float = 1.0   # pixels per scale_unit; 1.0 = not calibrated
     scale_unit: str = "cm"      # "cm" or "m"
+    measurements: list[Measurement] = field(default_factory=list)
 
     def labeled_count(self) -> int:
         return sum(1 for p in self.points if p.label is not None)
@@ -109,6 +128,11 @@ class Project:
                                  "label": p.label, "category": p.category}
                                 for p in a.points
                             ],
+                            "measurements": [
+                                {"id": m.id, "type": m.type, "label": m.label,
+                                 "points": m.points, "value": m.value, "unit": m.unit}
+                                for m in a.measurements
+                            ],
                         }
                         for a in s.annotations
                     ],
@@ -146,6 +170,15 @@ class Project:
             )
             for p_data in a_data["points"]:
                 ann.points.append(Point(**p_data))
+            for m_data in a_data.get("measurements", []):
+                ann.measurements.append(Measurement(
+                    id=m_data["id"],
+                    type=m_data["type"],
+                    label=m_data["label"],
+                    points=[tuple(pt) for pt in m_data["points"]],
+                    value=m_data["value"],
+                    unit=m_data["unit"],
+                ))
             return ann
 
         if "stations" in data:

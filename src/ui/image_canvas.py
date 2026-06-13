@@ -3,7 +3,8 @@ from PyQt6.QtCore import Qt, QPoint, QTimer, pyqtSignal
 from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QFont, QTransform, QPolygon, QImage
 import cv2
 
-from src.models.project import Point, ImageAnnotation
+from src.models.project import Point, ImageAnnotation, Measurement
+from src.core import measurement_tools
 
 POINT_RADIUS = 8
 LABEL_FONT_SIZE = 9
@@ -18,6 +19,7 @@ class ImageCanvas(QWidget):
     border_defined = pyqtSignal(int, int, int, int)  # x_min, y_min, x_max, y_max
     border_polygon_defined = pyqtSignal(list)     # [[x, y], ...] polygon points
     status_message = pyqtSignal(str)
+    measurement_drawn = pyqtSignal(object)        # emits a raw Measurement (no label yet)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -44,6 +46,12 @@ class ImageCanvas(QWidget):
         self._key_timer.setSingleShot(True)
         self._key_timer.setInterval(700)
         self._key_timer.timeout.connect(self._clear_key_buffer)
+
+        # Measurement drawing state
+        self._measure_mode: str = ""           # "" | "line" | "polyline" | "polygon" | "magic"
+        self._measure_clicks: list[tuple[float, float]] = []
+        self._measure_tolerance: int = 20
+        self._measurements: list[Measurement] = []  # rendered overlays
 
     # ------------------------------------------------------------------ public
 
@@ -112,6 +120,37 @@ class ImageCanvas(QWidget):
         self._border_mode = None
         self._border_clicks = []
         self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.update()
+
+    # -------------------------------------------------- measurement public API
+
+    def start_measurement(self, mode: str) -> None:
+        """Begin a measurement drawing session. mode: 'line'|'polyline'|'polygon'|'magic'."""
+        self._measure_mode = mode
+        self._measure_clicks = []
+        self._border_mode = None
+        self._border_clicks = []
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        hints = {
+            "line": "Click 2 points to measure length  (ESC to cancel)",
+            "polyline": "Click points along coral, double-click to finish  (ESC to cancel)",
+            "polygon": "Click to outline coral area, double-click to finish  (ESC to cancel)",
+            "magic": "Click on coral to auto-select area  (ESC to cancel)",
+        }
+        self.status_message.emit(hints.get(mode, "Draw measurement  (ESC to cancel)"))
+        self.update()
+
+    def cancel_measurement(self) -> None:
+        self._measure_mode = ""
+        self._measure_clicks = []
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.update()
+
+    def set_measure_tolerance(self, val: int) -> None:
+        self._measure_tolerance = val
+
+    def set_measurements(self, measurements: list[Measurement]) -> None:
+        self._measurements = measurements
         self.update()
 
     def select_point(self, index: int):
@@ -192,6 +231,12 @@ class ImageCanvas(QWidget):
                 painter.drawRect(int(min(xs)), int(min(ys)),
                                  int(max(xs) - min(xs)), int(max(ys) - min(ys)))
 
+        if self._measurements:
+            self._draw_measurements(painter)
+
+        if self._measure_clicks:
+            self._draw_measure_preview(painter)
+
         if self._annotation:
             self._draw_points(painter)
 
@@ -249,9 +294,92 @@ class ImageCanvas(QWidget):
                     p.label[:6],
                 )
 
+    def _draw_measurements(self, painter: QPainter):
+        mcolor = QColor(0, 220, 255, 230)
+        mpen = QPen(mcolor, 2.0 / self._zoom)
+        font = QFont("Arial", max(1, int(10 / self._zoom)))
+        font.setBold(True)
+        painter.setFont(font)
+
+        for m in self._measurements:
+            pts = [QPoint(int(x), int(y)) for x, y in m.points]
+            if not pts:
+                continue
+            painter.setPen(mpen)
+            painter.setBrush(QColor(0, 0, 0, 0))
+
+            if m.type == "line" and len(pts) >= 2:
+                painter.drawLine(pts[0], pts[1])
+                mid_x = (pts[0].x() + pts[1].x()) // 2
+                mid_y = (pts[0].y() + pts[1].y()) // 2
+                unit_sq = "²" if m.type == "polygon" else ""
+                label = f"{m.label}: {m.value:.2f} {m.unit}{unit_sq}"
+                painter.setPen(QPen(QColor(255, 255, 255)))
+                painter.drawText(mid_x + int(4 / self._zoom), mid_y, label)
+            elif m.type == "polyline" and len(pts) >= 2:
+                for i in range(1, len(pts)):
+                    painter.drawLine(pts[i - 1], pts[i])
+                mid_x = sum(p.x() for p in pts) // len(pts)
+                mid_y = sum(p.y() for p in pts) // len(pts)
+                painter.setPen(QPen(QColor(255, 255, 255)))
+                painter.drawText(mid_x + int(4 / self._zoom), mid_y,
+                                 f"{m.label}: {m.value:.2f} {m.unit}")
+            elif m.type == "polygon" and len(pts) >= 3:
+                painter.setBrush(QColor(0, 220, 255, 35))
+                painter.drawPolygon(QPolygon(pts))
+                cx = sum(p.x() for p in pts) // len(pts)
+                cy = sum(p.y() for p in pts) // len(pts)
+                painter.setPen(QPen(QColor(255, 255, 255)))
+                painter.drawText(cx + int(4 / self._zoom), cy,
+                                 f"{m.label}: {m.value:.2f} {m.unit}²")
+
+    def _draw_measure_preview(self, painter: QPainter):
+        pts = [QPoint(int(x), int(y)) for x, y in self._measure_clicks]
+        r = max(3, int(5.0 / self._zoom))
+        painter.setBrush(QColor(0, 220, 255, 200))
+        painter.setPen(QPen(QColor(0, 0, 0, 160), 1.0 / self._zoom))
+        for pt in pts:
+            painter.drawEllipse(pt.x() - r, pt.y() - r, r * 2, r * 2)
+        if len(pts) >= 2:
+            painter.setBrush(QColor(0, 0, 0, 0))
+            painter.setPen(QPen(QColor(0, 220, 255, 200), 2.0 / self._zoom))
+            for i in range(1, len(pts)):
+                painter.drawLine(pts[i - 1], pts[i])
+
     # ------------------------------------------------------------------ events
 
+    def mouseDoubleClickEvent(self, event):
+        if self._measure_mode in ("polyline", "polygon"):
+            if event.button() == Qt.MouseButton.LeftButton and len(self._measure_clicks) >= 2:
+                self._finish_measurement()
+            return
+        super().mouseDoubleClickEvent(event)
+
     def mousePressEvent(self, event):
+        if self._measure_mode:
+            if event.button() == Qt.MouseButton.LeftButton:
+                img_pos = self._screen_to_image(event.pos())
+                pt = (float(img_pos.x()), float(img_pos.y()))
+
+                if self._measure_mode == "magic":
+                    self._measure_clicks = [pt]
+                    self._finish_measurement()
+                elif self._measure_mode == "line":
+                    self._measure_clicks.append(pt)
+                    if len(self._measure_clicks) == 2:
+                        self._finish_measurement()
+                    else:
+                        self.status_message.emit("Click a second point  (ESC to cancel)")
+                        self.update()
+                else:  # polyline / polygon
+                    self._measure_clicks.append(pt)
+                    remaining = "line" if self._measure_mode == "polyline" else "polygon"
+                    self.status_message.emit(
+                        f"{len(self._measure_clicks)} point(s) — double-click to finish {remaining}  (ESC to cancel)"
+                    )
+                    self.update()
+            return
+
         if self._border_mode:
             if event.button() == Qt.MouseButton.LeftButton:
                 img_pos = self._screen_to_image(event.pos())
@@ -369,10 +497,53 @@ class ImageCanvas(QWidget):
         self.border_polygon_defined.emit(poly)
         self.update()
 
+    def _finish_measurement(self) -> None:
+        mode = self._measure_mode
+        clicks = self._measure_clicks
+        ann = self._annotation
+
+        scale = ann.scale_factor if ann else 1.0
+        unit = ann.scale_unit if ann else "cm"
+
+        if mode == "line" and len(clicks) >= 2:
+            value = measurement_tools.line_length(clicks[0], clicks[1], scale, unit)
+            points = clicks[:2]
+        elif mode == "polyline" and len(clicks) >= 2:
+            value = measurement_tools.polyline_length(clicks, scale, unit)
+            points = clicks[:]
+        elif mode == "polygon" and len(clicks) >= 3:
+            value = measurement_tools.polygon_area(clicks, scale, unit)
+            points = clicks[:]
+        elif mode == "magic" and clicks:
+            img_path = ann.image_path if ann else ""
+            sx, sy = int(clicks[0][0]), int(clicks[0][1])
+            contour = measurement_tools.magic_wand_select(
+                img_path, sx, sy, self._measure_tolerance
+            )
+            if contour and len(contour) >= 3:
+                value = measurement_tools.polygon_area(contour, scale, unit)
+                points = contour
+                mode = "polygon"
+            else:
+                self.status_message.emit("Magic wand: no region found — try adjusting tolerance")
+                self._measure_clicks = []
+                self.update()
+                return
+        else:
+            return
+
+        m = Measurement.new(mode, "", points, value, unit)
+        self._measure_mode = ""
+        self._measure_clicks = []
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.update()
+        self.measurement_drawn.emit(m)
+
     def keyPressEvent(self, event):
         if not self._annotation or not self._annotation.points:
-            if event.key() == Qt.Key.Key_Escape and self._border_mode:
+            if event.key() == Qt.Key.Key_Escape and (self._border_mode or self._measure_mode):
                 self.cancel_border_drawing()
+                self.cancel_measurement()
             else:
                 super().keyPressEvent(event)
             return
@@ -380,7 +551,9 @@ class ImageCanvas(QWidget):
         key = event.key()
 
         if key == Qt.Key.Key_Escape:
-            if self._border_mode:
+            if self._measure_mode:
+                self.cancel_measurement()
+            elif self._border_mode:
                 self.cancel_border_drawing()
             self._clear_key_buffer()
             return

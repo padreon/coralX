@@ -33,13 +33,15 @@ def main():
     main_win: list = []  # mutable container so lambda can capture it
 
     def _on_mode(mode: str):
-        welcome.hide()
+        welcome.close()
         if mode == "measurement":
             w = MeasurementWindow()
         else:
             w = MainWindow()
         main_win.append(w)
         w.show()
+        w.raise_()
+        w.activateWindow()
 
     welcome.mode_selected.connect(_on_mode)
     welcome.show()

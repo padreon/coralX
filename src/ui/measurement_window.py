@@ -27,8 +27,6 @@ class MeasurementWindow(QMainWindow):
 
     def __init__(self, project: Project | None = None, parent=None):
         super().__init__(parent)
-        # Ensure this is an independent top-level window with full chrome
-        self.setWindowFlags(Qt.WindowType.Window)
         self.setWindowTitle("coralX — Fragment Measurement")
         self.resize(1280, 800)
 

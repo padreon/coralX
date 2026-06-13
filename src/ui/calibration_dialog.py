@@ -4,84 +4,177 @@ import math
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox,
     QComboBox, QCheckBox, QPushButton, QWidget,
-    QDialogButtonBox,
+    QDialogButtonBox, QSizePolicy,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QPainter, QPen, QColor, QPixmap, QBrush, QFont
+from PyQt6.QtCore import Qt, QPoint, pyqtSignal
+from PyQt6.QtGui import QPainter, QPen, QColor, QPixmap, QBrush, QFont, QTransform
 
 from src.models.project import ImageAnnotation
 
 
 POINT_RADIUS = 6
-PREVIEW_MAX_SIZE = 600
+CANVAS_SIZE = 600   # initial display size
 
 
 class _CalibCanvas(QWidget):
-    """Minimal canvas that lets the user click exactly two calibration points."""
+    """
+    Zoomable canvas for placing exactly two calibration points.
+    - Scroll wheel or ↑/↓ arrow keys: zoom in/out
+    - Middle-mouse drag: pan
+    - Left click: place / replace calibration points
+    """
 
     points_changed = pyqtSignal(list)   # emits list of (x, y) in image coords
 
     def __init__(self, pixmap: QPixmap, parent=None):
         super().__init__(parent)
-        self._orig = pixmap
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._orig = pixmap           # full-resolution original
         self._clicks: list[tuple[int, int]] = []
+        self._pan_start: QPoint | None = None
 
-        # Scale pixmap to fit PREVIEW_MAX_SIZE
-        self._pixmap = pixmap.scaled(
-            PREVIEW_MAX_SIZE, PREVIEW_MAX_SIZE,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        self._scale = self._pixmap.width() / pixmap.width()
+        # Zoom/pan state (same model as ImageCanvas)
+        self._zoom: float = 1.0
+        self._offset = QPoint(0, 0)
 
-        self.setFixedSize(self._pixmap.size())
+        self.setMinimumSize(CANVAS_SIZE, CANVAS_SIZE)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setCursor(Qt.CursorShape.CrossCursor)
 
+    # -------------------------------------------------------- public
+
+    def zoom_in(self) -> None:
+        self._apply_zoom(self._zoom * 1.25)
+
+    def zoom_out(self) -> None:
+        self._apply_zoom(self._zoom / 1.25)
+
+    def zoom_fit(self) -> None:
+        if not self._orig.isNull():
+            wr = self.width() / self._orig.width()
+            hr = self.height() / self._orig.height()
+            self._zoom = min(wr, hr) * 0.95
+            self._offset = QPoint(0, 0)
+            self.update()
+
+    def _apply_zoom(self, new_zoom: float, anchor: QPoint | None = None) -> None:
+        new_zoom = max(0.1, min(20.0, new_zoom))
+        if anchor and not self._orig.isNull():
+            inv, ok = self._build_transform().inverted()
+            if ok:
+                img = inv.map(anchor)
+                pw, ph = self._orig.width(), self._orig.height()
+                self._offset = QPoint(
+                    int(anchor.x() - self.width()  / 2 - (img.x() - pw / 2) * new_zoom),
+                    int(anchor.y() - self.height() / 2 - (img.y() - ph / 2) * new_zoom),
+                )
+        self._zoom = new_zoom
+        self.update()
+
+    def _build_transform(self) -> QTransform:
+        cx = self.width()  / 2 + self._offset.x()
+        cy = self.height() / 2 + self._offset.y()
+        t = QTransform()
+        t.translate(cx, cy)
+        t.scale(self._zoom, self._zoom)
+        if not self._orig.isNull():
+            t.translate(-self._orig.width() / 2, -self._orig.height() / 2)
+        return t
+
+    def _screen_to_image(self, pos: QPoint) -> tuple[int, int]:
+        inv, ok = self._build_transform().inverted()
+        if ok:
+            m = inv.map(pos)
+            return (int(m.x()), int(m.y()))
+        return (int(pos.x()), int(pos.y()))
+
+    # -------------------------------------------------------- events
+
     def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.MiddleButton:
+            self._pan_start = event.pos()
+            return
         if event.button() != Qt.MouseButton.LeftButton:
             return
         if len(self._clicks) >= 2:
             self._clicks.clear()
-        px = event.position().x()
-        py = event.position().y()
-        # convert screen → image coords
-        ix = int(px / self._scale)
-        iy = int(py / self._scale)
+        ix, iy = self._screen_to_image(event.pos())
+        # Clamp to image bounds
+        ix = max(0, min(self._orig.width() - 1, ix))
+        iy = max(0, min(self._orig.height() - 1, iy))
         self._clicks.append((ix, iy))
         self.points_changed.emit(list(self._clicks))
         self.update()
 
+    def mouseMoveEvent(self, event):
+        if self._pan_start and event.buttons() & Qt.MouseButton.MiddleButton:
+            delta = event.pos() - self._pan_start
+            self._offset += delta
+            self._pan_start = event.pos()
+            self.update()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.MiddleButton:
+            self._pan_start = None
+
+    def wheelEvent(self, event):
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+        factor = 1.15 if delta > 0 else 0.87
+        self._apply_zoom(self._zoom * factor, anchor=event.position().toPoint())
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Up:
+            self.zoom_in()
+        elif event.key() == Qt.Key.Key_Down:
+            self.zoom_out()
+        else:
+            super().keyPressEvent(event)
+
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.drawPixmap(0, 0, self._pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(self.rect(), QColor(30, 30, 30))
 
+        if self._orig.isNull():
+            return
+
+        transform = self._build_transform()
+        painter.setTransform(transform)
+        painter.drawPixmap(0, 0, self._orig)
+
+        # Dashed line between the two points
         if len(self._clicks) == 2:
-            # draw line between points
-            ax = int(self._clicks[0][0] * self._scale)
-            ay = int(self._clicks[0][1] * self._scale)
-            bx = int(self._clicks[1][0] * self._scale)
-            by = int(self._clicks[1][1] * self._scale)
-            pen = QPen(QColor(255, 220, 0), 2, Qt.PenStyle.DashLine)
+            ax, ay = self._clicks[0]
+            bx, by = self._clicks[1]
+            pen = QPen(QColor(255, 220, 0), 2.0 / self._zoom, Qt.PenStyle.DashLine)
             painter.setPen(pen)
             painter.drawLine(ax, ay, bx, by)
 
-        pen = QPen(QColor(255, 80, 80), 2)
-        painter.setPen(pen)
-        painter.setBrush(QBrush(QColor(255, 80, 80, 180)))
+        # Click markers
+        r = max(2, int(POINT_RADIUS / self._zoom))
+        dot_pen = QPen(QColor(255, 80, 80), 1.5 / self._zoom)
+        dot_brush = QBrush(QColor(255, 80, 80, 180))
         font = QFont()
         font.setBold(True)
+        font.setPointSize(max(1, int(9 / self._zoom)))
         painter.setFont(font)
 
         for i, (ix, iy) in enumerate(self._clicks):
-            sx = int(ix * self._scale)
-            sy = int(iy * self._scale)
-            painter.drawEllipse(
-                sx - POINT_RADIUS, sy - POINT_RADIUS,
-                POINT_RADIUS * 2, POINT_RADIUS * 2,
-            )
+            painter.setPen(dot_pen)
+            painter.setBrush(dot_brush)
+            painter.drawEllipse(ix - r, iy - r, r * 2, r * 2)
             painter.setPen(QPen(Qt.GlobalColor.white))
-            painter.drawText(sx - 4, sy + 5, str(i + 1))
-            painter.setPen(pen)
+            painter.drawText(ix + r + 1, iy + r // 2, str(i + 1))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # On first meaningful resize fit the image
+        if self._zoom == 1.0:
+            self.zoom_fit()
+
+    # -------------------------------------------------------- data
 
     def reset(self):
         self._clicks.clear()
@@ -111,6 +204,8 @@ class CalibrationDialog(QDialog):
         self._ann = annotation
         self.setWindowTitle("Calibrate Image Scale")
         self.setModal(True)
+        self.resize(700, 820)
+        self.setMinimumSize(500, 600)
 
         pixmap = QPixmap(annotation.image_path)
         if pixmap.isNull():
@@ -119,6 +214,18 @@ class CalibrationDialog(QDialog):
 
         self._canvas = _CalibCanvas(pixmap, self)
         self._canvas.points_changed.connect(self._on_points_changed)
+
+        # Zoom controls
+        zoom_row = QHBoxLayout()
+        btn_zoom_in = QPushButton("↑  Zoom In")
+        btn_zoom_out = QPushButton("↓  Zoom Out")
+        btn_zoom_fit = QPushButton("Fit")
+        for b in (btn_zoom_in, btn_zoom_out, btn_zoom_fit):
+            b.setFixedHeight(26)
+            zoom_row.addWidget(b)
+        btn_zoom_in.clicked.connect(self._canvas.zoom_in)
+        btn_zoom_out.clicked.connect(self._canvas.zoom_out)
+        btn_zoom_fit.clicked.connect(self._canvas.zoom_fit)
 
         # Controls
         self._lbl_instruction = QLabel(
@@ -175,6 +282,7 @@ class CalibrationDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.addWidget(self._lbl_instruction)
+        layout.addLayout(zoom_row)
         layout.addWidget(self._canvas)
         layout.addWidget(self._lbl_px_dist)
         layout.addLayout(dist_layout)

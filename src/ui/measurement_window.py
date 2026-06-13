@@ -91,6 +91,21 @@ class MeasurementWindow(QMainWindow):
         self._img_list.currentRowChanged.connect(self._on_image_selected)
         layout.addWidget(self._img_list)
 
+        # Zoom controls
+        grp_zoom = QGroupBox("View")
+        zoom_layout = QHBoxLayout(grp_zoom)
+        zoom_layout.setContentsMargins(4, 4, 4, 4)
+        btn_zi = QPushButton("↑ In")
+        btn_zo = QPushButton("↓ Out")
+        btn_zf = QPushButton("Fit")
+        for b in (btn_zi, btn_zo, btn_zf):
+            b.setFixedHeight(24)
+            zoom_layout.addWidget(b)
+        btn_zi.clicked.connect(lambda: self._canvas.zoom_in())
+        btn_zo.clicked.connect(lambda: self._canvas.zoom_out())
+        btn_zf.clicked.connect(lambda: self._canvas.zoom_fit())
+        layout.addWidget(grp_zoom)
+
         # Calibration
         grp_calib = QGroupBox("Calibration")
         calib_layout = QVBoxLayout(grp_calib)

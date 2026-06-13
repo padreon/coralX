@@ -43,32 +43,47 @@ def magic_wand_select(image_path: str, seed_px: int, seed_py: int,
     then return the largest contour as image-space (x, y) points.
     Returns None if the image cannot be read or no contour is found.
     """
-    img = cv2.imread(image_path)
-    if img is None:
+    try:
+        img = cv2.imread(image_path)
+        if img is None:
+            return None
+
+        h, w = img.shape[:2]
+        seed_px = max(0, min(w - 1, seed_px))
+        seed_py = max(0, min(h - 1, seed_py))
+
+        mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
+        flood_img = img.copy()
+        tol = max(1, int(tolerance))
+        lo = (tol, tol, tol)
+        hi = (tol, tol, tol)
+        # FLOODFILL_MASK_ONLY: write to mask only, not the image.
+        # Upper byte of flags = mask fill value (255).
+        flags = cv2.FLOODFILL_MASK_ONLY | (255 << 8)
+        cv2.floodFill(flood_img, mask, (seed_px, seed_py),
+                      (0, 255, 0), lo, hi, flags)
+
+        # Strip the 1-pixel padding floodFill requires
+        filled_mask = mask[1:h + 1, 1:w + 1]
+
+        contours, _ = cv2.findContours(
+            filled_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        if not contours:
+            return None
+
+        largest = max(contours, key=cv2.contourArea)
+        if cv2.contourArea(largest) < 4:
+            return None
+
+        # Simplify contour — epsilon ~0.5% of perimeter keeps shape accurate
+        perimeter = cv2.arcLength(largest, True)
+        epsilon = max(1.0, 0.005 * perimeter)
+        approx = cv2.approxPolyDP(largest, epsilon, True)
+        if len(approx) < 3:
+            return None
+
+        return [(float(pt[0][0]), float(pt[0][1])) for pt in approx]
+
+    except Exception:
         return None
-
-    h, w = img.shape[:2]
-    seed_px = max(0, min(w - 1, seed_px))
-    seed_py = max(0, min(h - 1, seed_py))
-
-    mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
-    flood_img = img.copy()
-    lo = (tolerance, tolerance, tolerance)
-    hi = (tolerance, tolerance, tolerance)
-    cv2.floodFill(flood_img, mask, (seed_px, seed_py),
-                  newVal=(0, 255, 0), loDiff=lo, upDiff=hi,
-                  flags=cv2.FLOODFILL_MASK_ONLY | (255 << 8))
-
-    # mask is (h+2) x (w+2); strip the 1-pixel border padding
-    filled_mask = mask[1:h + 1, 1:w + 1]
-
-    contours, _ = cv2.findContours(filled_mask, cv2.RETR_EXTERNAL,
-                                   cv2.CHAIN_APPROX_TC89_L1)
-    if not contours:
-        return None
-
-    largest = max(contours, key=cv2.contourArea)
-    # Simplify contour to keep point count manageable
-    epsilon = 0.002 * cv2.arcLength(largest, True)
-    approx = cv2.approxPolyDP(largest, epsilon, True)
-    return [(float(pt[0][0]), float(pt[0][1])) for pt in approx]

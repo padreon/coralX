@@ -52,6 +52,7 @@ class ImageCanvas(QWidget):
         self._measure_clicks: list[tuple[float, float]] = []
         self._measure_tolerance: int = 20
         self._measurements: list[Measurement] = []  # rendered overlays
+        self._magic_preview: list[tuple[float, float]] | None = None  # pending magic wand result
 
     # ------------------------------------------------------------------ public
 
@@ -143,6 +144,7 @@ class ImageCanvas(QWidget):
     def cancel_measurement(self) -> None:
         self._measure_mode = ""
         self._measure_clicks = []
+        self._magic_preview = None
         self.setCursor(Qt.CursorShape.ArrowCursor)
         self.update()
 
@@ -234,7 +236,10 @@ class ImageCanvas(QWidget):
         if self._measurements:
             self._draw_measurements(painter)
 
-        if self._measure_clicks:
+        if self._magic_preview:
+            self._draw_magic_preview(painter)
+
+        if self._measure_clicks and not self._magic_preview:
             self._draw_measure_preview(painter)
 
         if self._annotation:
@@ -346,6 +351,17 @@ class ImageCanvas(QWidget):
             for i in range(1, len(pts)):
                 painter.drawLine(pts[i - 1], pts[i])
 
+    def _draw_magic_preview(self, painter: QPainter):
+        if not self._magic_preview:
+            return
+        pts = [QPoint(int(x), int(y)) for x, y in self._magic_preview]
+        if len(pts) < 3:
+            return
+        # Yellow-orange semi-transparent fill + solid border
+        painter.setBrush(QColor(255, 180, 0, 70))
+        painter.setPen(QPen(QColor(255, 200, 0, 240), 2.5 / self._zoom))
+        painter.drawPolygon(QPolygon(pts))
+
     # ------------------------------------------------------------------ events
 
     def mouseDoubleClickEvent(self, event):
@@ -362,8 +378,9 @@ class ImageCanvas(QWidget):
                 pt = (float(img_pos.x()), float(img_pos.y()))
 
                 if self._measure_mode == "magic":
+                    # Every click runs a new floodFill and shows preview
                     self._measure_clicks = [pt]
-                    self._finish_measurement()
+                    self._run_magic_preview(pt)
                 elif self._measure_mode == "line":
                     self._measure_clicks.append(pt)
                     if len(self._measure_clicks) == 2:
@@ -497,6 +514,30 @@ class ImageCanvas(QWidget):
         self.border_polygon_defined.emit(poly)
         self.update()
 
+    def _run_magic_preview(self, seed: tuple[float, float]) -> None:
+        ann = self._annotation
+        if not ann:
+            return
+        self.status_message.emit("Running magic wand…")
+        contour = measurement_tools.magic_wand_select(
+            ann.image_path, int(seed[0]), int(seed[1]), self._measure_tolerance
+        )
+        if contour and len(contour) >= 3:
+            self._magic_preview = contour
+            scale = ann.scale_factor if ann.scale_factor > 1.0 else 1.0
+            unit = ann.scale_unit
+            area = measurement_tools.polygon_area(contour, scale, unit)
+            unit_str = f"{unit}²" if ann.scale_factor > 1.0 else "px²"
+            self.status_message.emit(
+                f"Preview: {area:.2f} {unit_str} — Enter to confirm / click to retry / ESC to cancel"
+            )
+        else:
+            self._magic_preview = None
+            self.status_message.emit(
+                "No region found — try adjusting tolerance or click elsewhere  (ESC to cancel)"
+            )
+        self.update()
+
     def _finish_measurement(self) -> None:
         mode = self._measure_mode
         clicks = self._measure_clicks
@@ -514,42 +555,27 @@ class ImageCanvas(QWidget):
         elif mode == "polygon" and len(clicks) >= 3:
             value = measurement_tools.polygon_area(clicks, scale, unit)
             points = clicks[:]
-        elif mode == "magic" and clicks:
-            img_path = ann.image_path if ann else ""
-            sx, sy = int(clicks[0][0]), int(clicks[0][1])
-            contour = measurement_tools.magic_wand_select(
-                img_path, sx, sy, self._measure_tolerance
-            )
-            if contour and len(contour) >= 3:
-                value = measurement_tools.polygon_area(contour, scale, unit)
-                points = contour
-                mode = "polygon"
-            else:
-                self.status_message.emit("Magic wand: no region found — try adjusting tolerance")
-                self._measure_clicks = []
-                self.update()
-                return
+        elif mode == "magic" and self._magic_preview:
+            contour = self._magic_preview
+            value = measurement_tools.polygon_area(contour, scale, unit)
+            points = contour
+            mode = "polygon"
+            self._magic_preview = None
         else:
             return
 
         m = Measurement.new(mode, "", points, value, unit)
         self._measure_mode = ""
         self._measure_clicks = []
+        self._magic_preview = None
         self.setCursor(Qt.CursorShape.ArrowCursor)
         self.update()
         self.measurement_drawn.emit(m)
 
     def keyPressEvent(self, event):
-        if not self._annotation or not self._annotation.points:
-            if event.key() == Qt.Key.Key_Escape and (self._border_mode or self._measure_mode):
-                self.cancel_border_drawing()
-                self.cancel_measurement()
-            else:
-                super().keyPressEvent(event)
-            return
-        points = self._annotation.points
         key = event.key()
 
+        # ESC always cancels any active drawing mode
         if key == Qt.Key.Key_Escape:
             if self._measure_mode:
                 self.cancel_measurement()
@@ -558,6 +584,25 @@ class ImageCanvas(QWidget):
             self._clear_key_buffer()
             return
 
+        # Enter confirms magic wand preview
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if self._measure_mode == "magic" and self._magic_preview:
+                self._finish_measurement()
+                return
+
+        # Up/Down arrow zoom (active when no points to cycle, e.g. measurement mode)
+        no_points = not self._annotation or not self._annotation.points
+        if no_points:
+            if key == Qt.Key.Key_Up:
+                self.zoom_in()
+                return
+            if key == Qt.Key.Key_Down:
+                self.zoom_out()
+                return
+            super().keyPressEvent(event)
+            return
+
+        points = self._annotation.points  # type: ignore[union-attr]
         n = len(points)
         if key == Qt.Key.Key_Right:
             self._clear_key_buffer()
@@ -572,6 +617,10 @@ class ImageCanvas(QWidget):
             if self._selected_index is not None:
                 center = self.mapToGlobal(self.rect().center())
                 self._show_label_menu(center, points[self._selected_index])
+        elif key == Qt.Key.Key_Up:
+            self.zoom_in()
+        elif key == Qt.Key.Key_Down:
+            self.zoom_out()
         else:
             text = event.text().upper()
             has_buf = text and text.isprintable()

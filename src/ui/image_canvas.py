@@ -1,7 +1,8 @@
 from PyQt6.QtWidgets import QWidget, QMenu
 from PyQt6.QtCore import Qt, QPoint, QTimer, pyqtSignal
-from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QFont, QTransform, QPolygon, QImage
+from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QFont, QTransform, QPolygon, QImage, QPainterPath
 import cv2
+import numpy as np
 
 from src.models.project import Point, ImageAnnotation, Measurement
 from src.core import measurement_tools
@@ -20,6 +21,7 @@ class ImageCanvas(QWidget):
     border_polygon_defined = pyqtSignal(list)     # [[x, y], ...] polygon points
     status_message = pyqtSignal(str)
     measurement_drawn = pyqtSignal(object)        # emits a raw Measurement (no label yet)
+    preview_updated = pyqtSignal(dict)            # live stats while drawing/selecting
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -50,9 +52,21 @@ class ImageCanvas(QWidget):
         # Measurement drawing state
         self._measure_mode: str = ""           # "" | "line" | "polyline" | "polygon" | "magic"
         self._measure_clicks: list[tuple[float, float]] = []
-        self._measure_tolerance: int = 20
+        self._measure_tolerance: int = 32
+        self._measure_smoothing: int = 0           # 0=detailed, 100=simplified
         self._measurements: list[Measurement] = []  # rendered overlays
-        self._magic_preview: list[tuple[float, float]] | None = None  # pending magic wand result
+        self._magic_preview: list[tuple[float, float]] | None = None  # largest outer (for stats/bbox)
+        # All disconnected regions: list of (outer_pts, [hole_pts, ...])
+        self._magic_regions: list[tuple[list, list]] = []
+        self._magic_mask: "np.ndarray | None" = None  # accumulated flood-fill mask for union
+        # Undo snapshots for in-progress magic-wand clicks: (mask_copy, clicks_copy)
+        self._magic_history: list[tuple] = []
+        # Manual eraser brush (scrubs pixels out of the magic-wand mask by hand)
+        self._eraser_active: bool = False
+        self._eraser_radius: int = 24              # brush radius, image-space px
+        self._erasing: bool = False                # left button held, scrubbing
+        self._eraser_cursor: tuple[float, float] | None = None  # brush outline pos
+        self._measure_ready: bool = False          # shape drawn, waiting for Enter to confirm
 
     # ------------------------------------------------------------------ public
 
@@ -129,6 +143,9 @@ class ImageCanvas(QWidget):
         """Begin a measurement drawing session. mode: 'line'|'polyline'|'polygon'|'magic'."""
         self._measure_mode = mode
         self._measure_clicks = []
+        self._magic_history = []
+        self._erasing = False
+        self._eraser_cursor = None
         self._border_mode = None
         self._border_clicks = []
         self.setCursor(Qt.CursorShape.CrossCursor)
@@ -145,11 +162,40 @@ class ImageCanvas(QWidget):
         self._measure_mode = ""
         self._measure_clicks = []
         self._magic_preview = None
+        self._magic_regions = []
+        self._magic_mask = None
+        self._magic_history = []
+        self._erasing = False
+        self._eraser_cursor = None
+        self._measure_ready = False
+        self.preview_updated.emit({})
         self.setCursor(Qt.CursorShape.ArrowCursor)
         self.update()
 
     def set_measure_tolerance(self, val: int) -> None:
         self._measure_tolerance = val
+
+    def set_measure_smoothing(self, val: int) -> None:
+        self._measure_smoothing = val
+
+    def set_eraser_active(self, on: bool) -> None:
+        """Toggle the manual eraser brush (only meaningful in magic-wand mode)."""
+        self._eraser_active = on
+        self._erasing = False
+        self._eraser_cursor = None
+        if self._measure_mode == "magic":
+            if on:
+                self.status_message.emit(
+                    "Eraser on — drag over the selection to scrub it away  "
+                    "(toggle off to add again)")
+            else:
+                self.status_message.emit(
+                    "Eraser off — click coral to add / right-click to subtract")
+        self.update()
+
+    def set_eraser_radius(self, px: int) -> None:
+        self._eraser_radius = max(1, int(px))
+        self.update()
 
     def set_measurements(self, measurements: list[Measurement]) -> None:
         self._measurements = measurements
@@ -241,6 +287,10 @@ class ImageCanvas(QWidget):
 
         if self._measure_clicks and not self._magic_preview:
             self._draw_measure_preview(painter)
+
+        if (self._measure_mode == "magic" and self._eraser_active
+                and self._eraser_cursor is not None):
+            self._draw_eraser_cursor(painter)
 
         if self._annotation:
             self._draw_points(painter)
@@ -351,50 +401,271 @@ class ImageCanvas(QWidget):
             for i in range(1, len(pts)):
                 painter.drawLine(pts[i - 1], pts[i])
 
+        # Bounding box lines shown only when shape is complete (waiting for Enter)
+        if self._measure_ready and len(pts) >= 2:
+            ann = self._annotation
+            unit = ann.scale_unit if ann else "cm"
+            scale = ann.scale_factor if ann and ann.scale_factor > 1.0 else 1.0
+            if self._measure_mode == "polygon":
+                # Area shape → tilt-aware oriented box (height along the lean).
+                self._draw_oriented_bbox(painter, self._measure_clicks, scale, unit)
+            else:
+                w, h = measurement_tools.bounding_box(self._measure_clicks, scale)
+                self._draw_bbox_lines(painter, pts, w, h, unit)
+
+    def _draw_eraser_cursor(self, painter: QPainter):
+        """Outline of the eraser brush at the cursor (image-space radius)."""
+        cx, cy = self._eraser_cursor
+        r = max(1, int(self._eraser_radius))
+        painter.setBrush(QColor(255, 60, 60, 40))
+        painter.setPen(QPen(QColor(255, 70, 70, 230), 1.5 / self._zoom,
+                            Qt.PenStyle.DashLine))
+        painter.drawEllipse(QPoint(int(cx), int(cy)), r, r)
+
     def _draw_magic_preview(self, painter: QPainter):
         if not self._magic_preview:
             return
-        pts = [QPoint(int(x), int(y)) for x, y in self._magic_preview]
-        if len(pts) < 3:
+        outer_pts = [QPoint(int(x), int(y)) for x, y in self._magic_preview]
+        if len(outer_pts) < 3:
             return
-        # Yellow-orange semi-transparent fill + solid border
+
+        # Build a QPainterPath with OddEvenFill so that hole subpaths
+        # visually punch through the fill — rendering a true donut shape.
+        path = QPainterPath()
+        path.setFillRule(Qt.FillRule.OddEvenFill)
+
+        # All disconnected regions (each with its own holes)
+        for outer, holes in self._magic_regions:
+            if len(outer) < 3:
+                continue
+            path.moveTo(outer[0][0], outer[0][1])
+            for x, y in outer[1:]:
+                path.lineTo(x, y)
+            path.closeSubpath()
+            for hole in holes:
+                if len(hole) >= 3:
+                    path.moveTo(hole[0][0], hole[0][1])
+                    for x, y in hole[1:]:
+                        path.lineTo(x, y)
+                    path.closeSubpath()
+
         painter.setBrush(QColor(255, 180, 0, 70))
         painter.setPen(QPen(QColor(255, 200, 0, 240), 2.5 / self._zoom))
-        painter.drawPolygon(QPolygon(pts))
+        painter.drawPath(path)
+
+        # Oriented box: height/width follow the coral's tilt, not the photo axes.
+        ann = self._annotation
+        unit = ann.scale_unit if ann else "cm"
+        scale = ann.scale_factor if ann and ann.scale_factor > 1.0 else 1.0
+        self._draw_oriented_bbox(painter, self._magic_preview, scale, unit)
+
+    def _draw_oriented_bbox(self, painter: QPainter,
+                            pts: list[tuple[float, float]],
+                            scale: float, unit: str) -> None:
+        """Draw the min-area rotated box plus tilt-aligned height/width axes."""
+        axes = measurement_tools.oriented_axes(pts)
+        if not axes:
+            return
+        w_real, h_real, angle = measurement_tools.oriented_extent(pts, scale)
+        unit_str = unit if scale > 1.0 else "px"
+
+        lw = 1.5 / self._zoom
+        fs = max(1, int(9 / self._zoom))
+        font = QFont("Arial", fs)
+        font.setBold(True)
+        painter.setFont(font)
+
+        # Faint rotated rectangle outline.
+        corners = [QPoint(int(x), int(y)) for x, y in axes["corners"]]
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor(255, 255, 255, 90), lw, Qt.PenStyle.DashLine))
+        painter.drawPolygon(QPolygon(corners))
+
+        def draw_axis(line, color, label, label_end):
+            """Draw the axis line + end ticks, and place its label at ONE end
+            (offset outward) so the H and W labels never stack at the centre.
+            label_end picks which endpoint anchors the label: 'min_y' = topmost,
+            'max_x' = rightmost."""
+            (x1, y1), (x2, y2) = line
+            p1 = QPoint(int(x1), int(y1))
+            p2 = QPoint(int(x2), int(y2))
+            painter.setPen(QPen(color, lw))
+            painter.drawLine(p1, p2)
+            # End ticks perpendicular to the axis.
+            dx, dy = x2 - x1, y2 - y1
+            ln = max(1e-6, (dx * dx + dy * dy) ** 0.5)
+            tick = 6 / self._zoom
+            nx, ny = -dy / ln * tick, dx / ln * tick
+            painter.drawLine(QPoint(int(x1 - nx), int(y1 - ny)),
+                             QPoint(int(x1 + nx), int(y1 + ny)))
+            painter.drawLine(QPoint(int(x2 - nx), int(y2 - ny)),
+                             QPoint(int(x2 + nx), int(y2 + ny)))
+            # Anchor the label at one endpoint, pushed outward from the centre.
+            if label_end == "min_y":
+                ex, ey = (x1, y1) if y1 <= y2 else (x2, y2)
+            else:  # "max_x"
+                ex, ey = (x1, y1) if x1 >= x2 else (x2, y2)
+            cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+            ox, oy = ex - cx, ey - cy
+            oln = max(1e-6, (ox * ox + oy * oy) ** 0.5)
+            off = 8 / self._zoom
+            painter.drawText(QPoint(int(ex + ox / oln * off + 3 / self._zoom),
+                                    int(ey + oy / oln * off)), label)
+
+        # Height = long axis (green), label at the top end; width = short axis
+        # (yellow), label at the right end — keeps the two labels apart.
+        angle_txt = f"  ({angle:+.0f}°)" if abs(angle) > 1e-6 else ""
+        draw_axis(axes["height_line"], QColor(100, 255, 140, 235),
+                  f"H: {h_real:.1f} {unit_str}{angle_txt}", "min_y")
+        draw_axis(axes["width_line"], QColor(255, 220, 0, 235),
+                  f"W: {w_real:.1f} {unit_str}", "max_x")
+
+    def _draw_bbox_lines(self, painter: QPainter,
+                         pts: list[QPoint],
+                         width_real: float, height_real: float,
+                         unit: str) -> None:
+        """
+        Height: vertical line from the actual bottommost contour point upward.
+        Width:  horizontal line at the lower of leftmost/rightmost points;
+                dashed connector drawn from the higher one down to that level.
+        """
+        tick = int(6 / self._zoom)
+        lw   = 1.5 / self._zoom
+        dash_lw = max(0.8, 0.8 / self._zoom)
+        fs   = max(1, int(9 / self._zoom))
+        font = QFont("Arial", fs)
+        font.setBold(True)
+        painter.setFont(font)
+
+        # Extreme actual contour points
+        bottom_pt = max(pts, key=lambda p: p.y())   # lowest on screen  (max y)
+        top_pt    = min(pts, key=lambda p: p.y())   # highest on screen (min y)
+        left_pt   = min(pts, key=lambda p: p.x())
+        right_pt  = max(pts, key=lambda p: p.x())
+
+        # ── Height ── green vertical line, from bottommost point straight up
+        h_x      = bottom_pt.x()
+        h_y_bot  = bottom_pt.y()
+        h_y_top  = top_pt.y()
+        h_pen = QPen(QColor(100, 255, 140, 230), lw)
+        painter.setPen(h_pen)
+        painter.drawLine(h_x, h_y_bot, h_x, h_y_top)
+        painter.drawLine(h_x - tick, h_y_bot, h_x + tick, h_y_bot)
+        painter.drawLine(h_x - tick, h_y_top, h_x + tick, h_y_top)
+        # Dashed horizontal connector from topmost point to the measurement line
+        if top_pt.x() != h_x:
+            painter.setPen(QPen(QColor(100, 255, 140, 140), dash_lw, Qt.PenStyle.DashLine))
+            painter.drawLine(top_pt.x(), h_y_top, h_x, h_y_top)
+            painter.setPen(h_pen)
+        painter.setPen(QPen(QColor(100, 255, 140)))
+        painter.drawText(h_x + int(3 / self._zoom),
+                         (h_y_bot + h_y_top) // 2 - int(2 / self._zoom),
+                         f"H: {height_real:.1f} {unit}")
+
+        # ── Width ── yellow horizontal line at the lower of leftmost/rightmost y
+        w_ref_y  = max(left_pt.y(), right_pt.y())   # lower = higher y value
+        left_x   = left_pt.x()
+        right_x  = right_pt.x()
+        w_pen = QPen(QColor(255, 220, 0, 230), lw)
+        dash_pen = QPen(QColor(255, 220, 0, 140), dash_lw, Qt.PenStyle.DashLine)
+
+        painter.setPen(w_pen)
+        # Dashed connector from the point that sits ABOVE the reference line
+        if left_pt.y() < w_ref_y:
+            painter.setPen(dash_pen)
+            painter.drawLine(left_x, left_pt.y(), left_x, w_ref_y)
+            painter.setPen(w_pen)
+        if right_pt.y() < w_ref_y:
+            painter.setPen(dash_pen)
+            painter.drawLine(right_x, right_pt.y(), right_x, w_ref_y)
+            painter.setPen(w_pen)
+
+        # Horizontal width line
+        painter.drawLine(left_x, w_ref_y, right_x, w_ref_y)
+        painter.drawLine(left_x, w_ref_y - tick, left_x, w_ref_y + tick)
+        painter.drawLine(right_x, w_ref_y - tick, right_x, w_ref_y + tick)
+        painter.setPen(QPen(QColor(255, 220, 0)))
+        painter.drawText((left_x + right_x) // 2 + int(3 / self._zoom),
+                         w_ref_y + int(12 / self._zoom),
+                         f"W: {width_real:.1f} {unit}")
 
     # ------------------------------------------------------------------ events
 
     def mouseDoubleClickEvent(self, event):
+        if self._measure_mode == "magic":
+            if event.button() == Qt.MouseButton.LeftButton:
+                # Double-click resets the entire magic wand selection
+                self._magic_preview = None
+                self._magic_mask = None
+                self._magic_regions = []
+                self._measure_clicks = []
+                self._magic_history = []
+                self.preview_updated.emit({})
+                self.status_message.emit("Selection reset — click to start again  (ESC to cancel)")
+                self.update()
+            return
+
         if self._measure_mode in ("polyline", "polygon"):
-            if event.button() == Qt.MouseButton.LeftButton and len(self._measure_clicks) >= 2:
-                self._finish_measurement()
+            if event.button() == Qt.MouseButton.LeftButton:
+                # The second press of the double-click already added a duplicate point
+                # via mousePressEvent — remove it so the last vertex isn't repeated.
+                if self._measure_clicks:
+                    self._measure_clicks.pop()
+                min_pts = 2 if self._measure_mode == "polyline" else 3
+                if len(self._measure_clicks) >= min_pts:
+                    self._measure_ready = True
+                    self._emit_preview_stats()
+                    label = "Polyline" if self._measure_mode == "polyline" else "Polygon"
+                    self.status_message.emit(
+                        f"{label} preview — Enter to confirm / ESC to cancel"
+                    )
+                    self.update()
             return
         super().mouseDoubleClickEvent(event)
 
     def mousePressEvent(self, event):
         if self._measure_mode:
-            if event.button() == Qt.MouseButton.LeftButton:
-                img_pos = self._screen_to_image(event.pos())
-                pt = (float(img_pos.x()), float(img_pos.y()))
+            img_pos = self._screen_to_image(event.pos())
+            pt = (float(img_pos.x()), float(img_pos.y()))
 
+            if event.button() == Qt.MouseButton.LeftButton:
                 if self._measure_mode == "magic":
-                    # Every click runs a new floodFill and shows preview
-                    self._measure_clicks = [pt]
-                    self._run_magic_preview(pt)
-                elif self._measure_mode == "line":
-                    self._measure_clicks.append(pt)
-                    if len(self._measure_clicks) == 2:
-                        self._finish_measurement()
+                    if self._eraser_active:
+                        # Left-drag: manually scrub pixels out of the selection.
+                        if self._magic_mask is not None:
+                            self._push_magic_history()
+                            self._erasing = True
+                            self._erase_at(pt, live=True)
                     else:
-                        self.status_message.emit("Click a second point  (ESC to cancel)")
+                        # Left-click: add (union) to existing selection
+                        self._push_magic_history()
+                        self._measure_clicks.append(pt)
+                        self._run_magic_preview(pt)
+                elif self._measure_mode == "line":
+                    if not self._measure_ready:
+                        self._measure_clicks.append(pt)
+                        if len(self._measure_clicks) == 2:
+                            self._measure_ready = True
+                            self._emit_preview_stats()
+                            self.status_message.emit(
+                                "Line preview — Enter to confirm / ESC to cancel"
+                            )
+                        else:
+                            self.status_message.emit("Click a second point  (ESC to cancel)")
                         self.update()
                 else:  # polyline / polygon
-                    self._measure_clicks.append(pt)
-                    remaining = "line" if self._measure_mode == "polyline" else "polygon"
-                    self.status_message.emit(
-                        f"{len(self._measure_clicks)} point(s) — double-click to finish {remaining}  (ESC to cancel)"
-                    )
-                    self.update()
+                    if not self._measure_ready:
+                        self._measure_clicks.append(pt)
+                        remaining = "line" if self._measure_mode == "polyline" else "polygon"
+                        self.status_message.emit(
+                            f"{len(self._measure_clicks)} point(s) — double-click to finish {remaining}  (ESC to cancel)"
+                        )
+                        self.update()
+            elif event.button() == Qt.MouseButton.RightButton:
+                if self._measure_mode == "magic":
+                    # Right-click: subtract the clicked area from the selection
+                    self._push_magic_history()
+                    self._run_magic_subtract(pt)
             return
 
         if self._border_mode:
@@ -448,6 +719,15 @@ class ImageCanvas(QWidget):
             self.update()
 
         img_pos = self._screen_to_image(event.pos())
+
+        # Eraser brush: show the brush outline, and scrub while dragging.
+        if self._measure_mode == "magic" and self._eraser_active:
+            self._eraser_cursor = (float(img_pos.x()), float(img_pos.y()))
+            if self._erasing and event.buttons() & Qt.MouseButton.LeftButton:
+                self._erase_at(self._eraser_cursor, live=True)
+            else:
+                self.update()
+
         if self._annotation and self._pixmap:
             hit = self._hit_point(img_pos)
             if hit:
@@ -462,6 +742,17 @@ class ImageCanvas(QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.MiddleButton:
             self._pan_start = None
+        elif event.button() == Qt.MouseButton.LeftButton and self._erasing:
+            self._erasing = False
+            # Empty selection after scrubbing → reset the preview cleanly.
+            if self._magic_mask is None or not self._magic_mask.any():
+                self._magic_preview = None
+                self._magic_regions = []
+                self.preview_updated.emit({})
+            self.status_message.emit(
+                "Erased — drag to remove more / toggle eraser off to add  "
+                "(Ctrl+Z to undo / Enter to confirm)")
+            self.update()
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
@@ -514,28 +805,245 @@ class ImageCanvas(QWidget):
         self.border_polygon_defined.emit(poly)
         self.update()
 
+    def _contours_from_mask(self, mask: np.ndarray) -> list[tuple[
+            list[tuple[float, float]],
+            list[list[tuple[float, float]]]]]:
+        """Return all disconnected regions as [(outer_pts, [hole_pts, ...]), ...].
+
+        Uses RETR_CCOMP so every outer contour keeps its own holes.
+        All outer contours are returned — disconnected regions are preserved.
+        """
+        h, w = mask.shape[0] - 2, mask.shape[1] - 2
+        region = mask[1:h + 1, 1:w + 1]
+        contours, hierarchy = cv2.findContours(
+            region, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE
+        )
+        if not contours or hierarchy is None:
+            return []
+
+        hier = hierarchy[0]  # shape (N, 4): [next, prev, first_child, parent]
+
+        def _approx(c) -> list[tuple[float, float]]:
+            perimeter = cv2.arcLength(c, True)
+            eps = 0.5 + (self._measure_smoothing / 100.0) * 0.04 * perimeter
+            approx = cv2.approxPolyDP(c, eps, True)
+            return [(float(p[0][0]), float(p[0][1])) for p in approx]
+
+        results: list[tuple[list, list]] = []
+        for i in range(len(contours)):
+            if hier[i][3] != -1:          # skip holes (handled under their parent)
+                continue
+            if cv2.contourArea(contours[i]) < 9:
+                continue
+            outer = _approx(contours[i])
+            if len(outer) < 3:
+                continue
+
+            # Collect holes that are direct children of this outer contour
+            holes: list[list[tuple[float, float]]] = []
+            child = hier[i][2]             # first child
+            while child != -1:
+                if cv2.contourArea(contours[child]) >= 9:
+                    h_pts = _approx(contours[child])
+                    if len(h_pts) >= 3:
+                        holes.append(h_pts)
+                child = hier[child][0]     # next sibling
+
+            results.append((outer, holes))
+
+        return results
+
+    def _run_magic_subtract(self, seed: tuple[float, float]) -> None:
+        """Right-click: flood-fill at seed and subtract that region from the mask."""
+        ann = self._annotation
+        if not ann or self._magic_mask is None:
+            return
+        self.status_message.emit("Subtracting area…")
+        new_mask = measurement_tools.magic_wand_subtract(
+            ann.image_path, int(seed[0]), int(seed[1]),
+            self._measure_tolerance, self._magic_mask,
+        )
+        if new_mask is None:
+            return
+        self._magic_mask = new_mask
+        regions = self._contours_from_mask(new_mask)
+        if not regions:
+            self._magic_preview = None
+            self._magic_regions = []
+            self.preview_updated.emit({})
+            self.status_message.emit(
+                "Selection empty — click to add / double-click to reset  (ESC to cancel)"
+            )
+            self.update()
+            return
+        self._magic_regions = regions
+        # Keep largest outer contour as _magic_preview for stats / bounding box
+        self._magic_preview = max(regions, key=lambda r: len(r[0]))[0]
+        self._emit_preview_stats()
+        self.status_message.emit(
+            "Area removed — click to expand / right-click to remove more / "
+            "double-click to reset / Enter to confirm / ESC to cancel"
+        )
+        self.update()
+
+    def _erase_at(self, pt: tuple[float, float], live: bool) -> None:
+        """Scrub a circular brush of pixels out of the magic-wand mask by hand.
+
+        Unlike right-click subtract (which removes a whole image feature), this
+        is a plain geometric eraser: it clears exactly the brushed disc, letting
+        the user clean up stray bits the wand grabbed. `live` recomputes the
+        outline/stats for on-the-fly feedback while dragging.
+        """
+        mask = self._magic_mask
+        if mask is None:
+            return
+        cx, cy = int(round(pt[0])), int(round(pt[1]))
+        # mask is padded by 1px, so image (x, y) -> mask (x+1, y+1).
+        cv2.circle(mask, (cx + 1, cy + 1), max(1, int(self._eraser_radius)),
+                   0, thickness=-1)
+        if not live:
+            return
+        regions = self._contours_from_mask(mask)
+        self._magic_regions = regions
+        self._magic_preview = (
+            max(regions, key=lambda r: len(r[0]))[0] if regions else None)
+        if self._magic_preview:
+            self._emit_preview_stats()
+        else:
+            self.preview_updated.emit({})
+        self.update()
+
+    def _push_magic_history(self) -> None:
+        """Snapshot the magic-wand state before a click so it can be undone."""
+        self._magic_history.append((
+            self._magic_mask.copy() if self._magic_mask is not None else None,
+            list(self._measure_clicks),
+        ))
+
+    def undo_last(self) -> bool:
+        """Undo the last in-progress drawing step. Returns True if it did.
+
+        Magic wand → revert the last add/subtract click; line/polyline/polygon →
+        remove the last placed point. Returns False when nothing is in progress
+        (so the caller can fall back to undoing a committed measurement).
+        """
+        if not self._measure_mode:
+            return False
+
+        if self._measure_mode == "magic":
+            if not self._magic_history:
+                return False
+            mask, clicks = self._magic_history.pop()
+            self._measure_clicks = clicks
+            self._magic_mask = mask
+            if mask is None or not mask.any():
+                self._magic_mask = None
+                self._magic_preview = None
+                self._magic_regions = []
+                self.preview_updated.emit({})
+                self.status_message.emit(
+                    "Selection cleared — click coral to start  (ESC to cancel)")
+            else:
+                regions = self._contours_from_mask(mask)
+                self._magic_regions = regions
+                self._magic_preview = (
+                    max(regions, key=lambda r: len(r[0]))[0] if regions else None)
+                self._emit_preview_stats()
+                self.status_message.emit("Undid last selection click  (ESC to cancel)")
+            self.update()
+            return True
+
+        # line / polyline / polygon: pop the last placed point
+        if self._measure_clicks:
+            self._measure_clicks.pop()
+            min_pts = 3 if self._measure_mode == "polygon" else 2
+            if len(self._measure_clicks) < min_pts:
+                self._measure_ready = False
+            if self._measure_ready:
+                self._emit_preview_stats()
+            else:
+                self.preview_updated.emit({})
+            self.status_message.emit(
+                f"Undid point — {len(self._measure_clicks)} left  (ESC to cancel)")
+            self.update()
+            return True
+
+        return False
+
+    def _emit_preview_stats(self) -> None:
+        """Compute dimensions for current preview shape and emit preview_updated."""
+        ann = self._annotation
+        scale = ann.scale_factor if ann and ann.scale_factor > 1.0 else 1.0
+        unit = ann.scale_unit if ann else "cm"
+
+        if self._measure_mode == "magic" and self._magic_preview:
+            pts = self._magic_preview
+        elif self._measure_ready and self._measure_clicks:
+            pts = self._measure_clicks
+        else:
+            self.preview_updated.emit({})
+            return
+
+        info: dict = {"unit": unit}
+        if self._measure_mode in ("polygon", "magic"):
+            # Use mask pixel count for magic wand (handles donut shapes accurately)
+            if self._measure_mode == "magic" and self._magic_mask is not None:
+                info["area"] = measurement_tools.mask_area(self._magic_mask, scale)
+            else:
+                info["area"] = measurement_tools.polygon_area(pts, scale, unit)
+            info["perimeter"] = measurement_tools.contour_perimeter(pts, scale)
+        elif self._measure_mode == "line":
+            info["length"] = measurement_tools.line_length(pts[0], pts[1], scale, unit)
+        elif self._measure_mode == "polyline":
+            info["length"] = measurement_tools.polyline_length(pts, scale, unit)
+
+        if self._measure_mode in ("polygon", "magic"):
+            # Tilt-aware: height runs along the coral's principal axis.
+            w, h, ang = measurement_tools.oriented_extent(pts, scale)
+            info["angle"] = ang
+        else:
+            w, h = measurement_tools.bounding_box(pts, scale)
+        info["width"] = w
+        info["height"] = h
+        self.preview_updated.emit(info)
+
     def _run_magic_preview(self, seed: tuple[float, float]) -> None:
         ann = self._annotation
         if not ann:
             return
         self.status_message.emit("Running magic wand…")
-        contour = measurement_tools.magic_wand_select(
-            ann.image_path, int(seed[0]), int(seed[1]), self._measure_tolerance
+        contour, mask = measurement_tools.magic_wand_select(
+            ann.image_path, int(seed[0]), int(seed[1]),
+            self._measure_tolerance, self._measure_smoothing,
+            self._magic_mask,
         )
         if contour and len(contour) >= 3:
-            self._magic_preview = contour
+            self._magic_mask = mask  # accumulate for next union click
+            # Rebuild every region (with holes) from the mask — same as the
+            # subtract path — so holes and disconnected regions stay visible
+            # after an add click instead of collapsing to one solid blob.
+            regions = self._contours_from_mask(mask)
+            self._magic_regions = regions if regions else [(contour, [])]
+            self._magic_preview = (
+                max(regions, key=lambda r: len(r[0]))[0] if regions else contour
+            )
             scale = ann.scale_factor if ann.scale_factor > 1.0 else 1.0
             unit = ann.scale_unit
             area = measurement_tools.polygon_area(contour, scale, unit)
             unit_str = f"{unit}²" if ann.scale_factor > 1.0 else "px²"
+            click_count = len(self._measure_clicks)
             self.status_message.emit(
-                f"Preview: {area:.2f} {unit_str} — Enter to confirm / click to retry / ESC to cancel"
+                f"Preview ({click_count} click{'s' if click_count != 1 else ''}): "
+                f"{area:.2f} {unit_str} — "
+                f"click to expand / right-click to remove area / double-click to reset / Enter to confirm / ESC to cancel"
             )
+            self._emit_preview_stats()
         else:
-            self._magic_preview = None
-            self.status_message.emit(
-                "No region found — try adjusting tolerance or click elsewhere  (ESC to cancel)"
-            )
+            self._magic_mask = mask  # keep accumulated mask even if no new contour
+            if not self._magic_preview:
+                self.status_message.emit(
+                    "No region found — try adjusting tolerance or click elsewhere  (ESC to cancel)"
+                )
         self.update()
 
     def _finish_measurement(self) -> None:
@@ -546,28 +1054,56 @@ class ImageCanvas(QWidget):
         scale = ann.scale_factor if ann else 1.0
         unit = ann.scale_unit if ann else "cm"
 
+        area = 0.0
+        perim = 0.0
+        auto_w = 0.0
+        auto_h = 0.0
+        angle = 0.0
+
         if mode == "line" and len(clicks) >= 2:
             value = measurement_tools.line_length(clicks[0], clicks[1], scale, unit)
             points = clicks[:2]
+            auto_w, auto_h = measurement_tools.bounding_box(points, scale)
         elif mode == "polyline" and len(clicks) >= 2:
             value = measurement_tools.polyline_length(clicks, scale, unit)
             points = clicks[:]
+            auto_w, auto_h = measurement_tools.bounding_box(points, scale)
         elif mode == "polygon" and len(clicks) >= 3:
-            value = measurement_tools.polygon_area(clicks, scale, unit)
+            area = measurement_tools.polygon_area(clicks, scale, unit)
+            value = area
             points = clicks[:]
+            perim = measurement_tools.contour_perimeter(points, scale)
+            # Oriented box → height follows the coral's tilt, not the photo axes.
+            auto_w, auto_h, angle = measurement_tools.oriented_extent(points, scale)
         elif mode == "magic" and self._magic_preview:
             contour = self._magic_preview
-            value = measurement_tools.polygon_area(contour, scale, unit)
+            # Use mask pixel count for area — accurate even for donut shapes
+            if self._magic_mask is not None:
+                area = measurement_tools.mask_area(self._magic_mask, scale)
+            else:
+                area = measurement_tools.polygon_area(contour, scale, unit)
+            value = area
             points = contour
             mode = "polygon"
+            perim = measurement_tools.contour_perimeter(points, scale)
+            # Oriented box → height follows the coral's tilt, not the photo axes.
+            auto_w, auto_h, angle = measurement_tools.oriented_extent(points, scale)
             self._magic_preview = None
+            self._magic_regions = []
+            self._magic_mask = None
         else:
             return
 
-        m = Measurement.new(mode, "", points, value, unit)
+        m = Measurement.new(mode, "", points, value, unit,
+                            auto_width=auto_w, auto_height=auto_h,
+                            area=area, perimeter_len=perim, angle=angle)
         self._measure_mode = ""
         self._measure_clicks = []
         self._magic_preview = None
+        self._magic_mask = None
+        self._magic_history = []
+        self._measure_ready = False
+        self.preview_updated.emit({})
         self.setCursor(Qt.CursorShape.ArrowCursor)
         self.update()
         self.measurement_drawn.emit(m)
@@ -584,9 +1120,12 @@ class ImageCanvas(QWidget):
             self._clear_key_buffer()
             return
 
-        # Enter confirms magic wand preview
+        # Enter confirms any pending preview
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             if self._measure_mode == "magic" and self._magic_preview:
+                self._finish_measurement()
+                return
+            if self._measure_ready:
                 self._finish_measurement()
                 return
 

@@ -16,10 +16,18 @@ data. The Python app in `src/` is still the production version.
 
 - Rust (stable), via [rustup](https://rustup.rs)
 - On Linux, the same X11/GUI system libraries the Python/PyQt6 build needs
-  (see `../setup.sh`) plus `libxcursor1` for winit:
+  (see `../setup.sh`) plus a few winit/rfd needs:
   ```
-  sudo apt-get install -y libxcursor1 libxrandr2 libxi6
+  sudo apt-get install -y libxcursor1 libxrandr2 libxi6 libgtk-3-dev
   ```
+  `libgtk-3-dev` is for native file dialogs (open/save project, add images,
+  every export flow). rfd's default Linux backend talks to the XDG Desktop
+  Portal over D-Bus, which needs a full desktop session (dbus + a portal
+  backend like `xdg-desktop-portal-gtk`) to work — that's not present on a
+  minimal window-manager-only setup like this devcontainer's Fluxbox, so
+  every file dialog would silently do nothing. This project pins rfd to its
+  GTK3 backend instead (see `Cargo.toml`), which talks to GTK directly with
+  no D-Bus/portal service required.
 
 No Python, OpenCV, or libtorch is required to build or run this — those
 were the whole point of the rewrite. Python is only needed once, separately,

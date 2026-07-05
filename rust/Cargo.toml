@@ -17,6 +17,7 @@ imageproc = "0.27.0"
 log = "0.4.33"
 nalgebra = "0.35.0"
 ndarray = "0.17.2"
+plotters = { version = "0.3.7", default-features = false, features = ["bitmap_backend", "bitmap_encoder", "errorbar", "line_series"] }
 rand = "0.10.2"
 rfd = "0.17.2"
 rust_xlsxwriter = "0.96.0"

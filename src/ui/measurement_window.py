@@ -206,9 +206,9 @@ class MeasurementWindow(QMainWindow):
 
         tol_label = QLabel("Magic wand tolerance:")
         self._tol_slider = QSlider(Qt.Orientation.Horizontal)
-        self._tol_slider.setRange(1, 150)
-        self._tol_slider.setValue(32)
-        self._tol_value_lbl = QLabel("32")
+        self._tol_slider.setRange(1, 100)
+        self._tol_slider.setValue(50)
+        self._tol_value_lbl = QLabel("50")
         self._tol_slider.valueChanged.connect(self._on_tolerance_changed)
         tol_row = QHBoxLayout()
         tol_row.addWidget(self._tol_slider)
@@ -216,11 +216,11 @@ class MeasurementWindow(QMainWindow):
         tools_layout.addWidget(tol_label)
         tools_layout.addLayout(tol_row)
 
-        smooth_label = QLabel("Contour detail (0=detail, 100=smooth):")
+        smooth_label = QLabel("Contour detail (1=detail, 10=smooth):")
         self._smooth_slider = QSlider(Qt.Orientation.Horizontal)
-        self._smooth_slider.setRange(0, 100)
-        self._smooth_slider.setValue(0)
-        self._smooth_value_lbl = QLabel("0")
+        self._smooth_slider.setRange(1, 10)
+        self._smooth_slider.setValue(1)
+        self._smooth_value_lbl = QLabel("1")
         self._smooth_slider.valueChanged.connect(self._on_smoothing_changed)
         smooth_row = QHBoxLayout()
         smooth_row.addWidget(self._smooth_slider)
@@ -393,8 +393,8 @@ class MeasurementWindow(QMainWindow):
         self._canvas.cancel_measurement()
         self._canvas.load_image(ann, {})
         self._canvas.set_measurements(ann.measurements)
-        self._canvas.set_measure_tolerance(self._tol_slider.value())
-        self._canvas.set_measure_smoothing(self._smooth_slider.value())
+        self._canvas.set_measure_tolerance(max(1, round(self._tol_slider.value() * 35 / 100)))
+        self._canvas.set_measure_smoothing(round((self._smooth_slider.value() - 1) * 5 / 9))
         # Always fit the new image to the view. Deferred so the canvas has its
         # final size (layout settles after this slot returns).
         QTimer.singleShot(0, self._canvas.zoom_fit)
@@ -484,11 +484,13 @@ class MeasurementWindow(QMainWindow):
 
     def _on_tolerance_changed(self, val: int):
         self._tol_value_lbl.setText(str(val))
-        self._canvas.set_measure_tolerance(val)
+        internal = max(1, round(val * 35 / 100))
+        self._canvas.set_measure_tolerance(internal)
 
     def _on_smoothing_changed(self, val: int):
         self._smooth_value_lbl.setText(str(val))
-        self._canvas.set_measure_smoothing(val)
+        internal = round((val - 1) * 5 / 9)
+        self._canvas.set_measure_smoothing(internal)
 
     def _on_eraser_toggled(self, on: bool):
         self._canvas.set_eraser_active(on)

@@ -197,6 +197,9 @@ impl Station {
 pub struct CoralGroup {
     pub name: String,
     pub codes: Vec<String>,
+    /// 6-character hex color (no '#'), when known from a CPCe code-file import.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

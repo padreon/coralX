@@ -968,6 +968,7 @@ dependencies = [
  "image",
  "imageproc",
  "log",
+ "nalgebra 0.35.0",
  "ndarray 0.17.2",
  "rand 0.10.2",
  "rfd",
@@ -2786,11 +2787,23 @@ dependencies = [
  "glam 0.32.1",
  "glam 0.33.2",
  "matrixmultiply",
+ "nalgebra-macros",
  "num-complex",
  "num-rational",
  "num-traits",
  "simba 0.10.0",
  "typenum",
+]
+
+[[package]]
+name = "nalgebra-macros"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "973e7178a678cfd059ccec50887658d482ce16b0aa9da3888ddeab5cd5eb4889"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

@@ -141,9 +141,13 @@ pub struct CalibrationResult {
 }
 
 impl CalibrationDialog {
-    /// `rgba` must be the decoded image pixels (`image_width * image_height * 4` bytes).
-    pub fn new(ctx: &Context, annotation: &ImageAnnotation, rgba: &[u8]) -> Self {
-        let (w, h) = (annotation.image_width.max(1) as usize, annotation.image_height.max(1) as usize);
+    /// `rgba` must be exactly `img_width * img_height * 4` bytes — the actual
+    /// decoded dimensions of the image `rgba` came from. These are trusted
+    /// over `annotation.image_width`/`image_height`, which can be stale or
+    /// unset (e.g. an image added without reading its dimensions), because a
+    /// mismatch here isn't just wrong math, it's an `epaint` panic.
+    pub fn new(ctx: &Context, annotation: &ImageAnnotation, img_width: u32, img_height: u32, rgba: &[u8]) -> Self {
+        let (w, h) = (img_width.max(1) as usize, img_height.max(1) as usize);
         let color_image = egui::ColorImage::from_rgba_unmultiplied([w, h], rgba);
         let texture = ctx.load_texture("calibration_image", color_image, egui::TextureOptions::LINEAR);
 
@@ -156,8 +160,8 @@ impl CalibrationDialog {
                 clicks: Vec::new(),
                 fitted: false,
             },
-            image_width: annotation.image_width,
-            image_height: annotation.image_height,
+            image_width: img_width as i64,
+            image_height: img_height as i64,
             current_scale_factor: annotation.scale_factor,
             current_scale_unit: annotation.scale_unit.clone(),
             real_dist: 50.0,

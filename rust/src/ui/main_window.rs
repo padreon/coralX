@@ -162,6 +162,17 @@ impl PointCountScreen {
         if let Err(e) = self.canvas.load_image(ctx, &path, codes) {
             self.status = format!("Could not read image file: {path} ({e})");
         }
+        // Backfill width/height for annotations added before this was tracked
+        // (older projects, or images added through an import path that
+        // skipped it) — photo_area() and the calibration dialog both depend
+        // on these being real, not zero.
+        let ann = &mut self.project.stations[self.current_station].annotations[idx];
+        if ann.image_width <= 0 || ann.image_height <= 0 {
+            if let Ok((w, h)) = image::image_dimensions(&path) {
+                ann.image_width = w as i64;
+                ann.image_height = h as i64;
+            }
+        }
         let measurements = Vec::new();
         self.canvas.set_measurements(measurements);
         self.canvas.set_selected_index(self.selected_row.map(|r| r as i64));
@@ -784,7 +795,7 @@ impl PointCountScreen {
         match image::open(&ann.image_path) {
             Ok(img) => {
                 let rgba = img.to_rgba8();
-                self.calibration_dialog = Some(CalibrationDialog::new(ctx, &ann, rgba.as_raw()));
+                self.calibration_dialog = Some(CalibrationDialog::new(ctx, &ann, img.width(), img.height(), rgba.as_raw()));
             }
             Err(e) => self.pending_error = Some(format!("Cannot load image: {e}")),
         }

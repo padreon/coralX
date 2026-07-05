@@ -79,6 +79,17 @@ impl MeasurementScreen {
             self.status = format!("Cannot load: {path} ({e})");
             return;
         }
+        // Backfill width/height for annotations added before this was tracked
+        // (older projects, or images added through a path that skipped it) —
+        // photo_area() and the calibration dialog both depend on these being
+        // real, not zero.
+        let ann = &mut self.project.stations[0].annotations[idx];
+        if ann.image_width <= 0 || ann.image_height <= 0 {
+            if let Ok((w, h)) = image::image_dimensions(&path) {
+                ann.image_width = w as i64;
+                ann.image_height = h as i64;
+            }
+        }
         let measurements = self.station().annotations[idx].measurements.clone();
         self.canvas.set_measurements(measurements);
         self.canvas.set_measure_tolerance(Self::tolerance_internal(self.tol_display));
@@ -118,7 +129,12 @@ impl MeasurementScreen {
         for p in paths {
             let p = p.to_string_lossy().into_owned();
             if !existing.contains(&p) {
-                self.station_mut().annotations.push(ImageAnnotation::new(p));
+                let mut ann = ImageAnnotation::new(p.clone());
+                if let Ok((w, h)) = image::image_dimensions(&p) {
+                    ann.image_width = w as i64;
+                    ann.image_height = h as i64;
+                }
+                self.station_mut().annotations.push(ann);
             }
         }
         if was_empty && !self.station().annotations.is_empty() {
@@ -488,7 +504,7 @@ impl MeasurementScreen {
         match image::open(&ann.image_path) {
             Ok(img) => {
                 let rgba = img.to_rgba8();
-                self.calibration_dialog = Some(CalibrationDialog::new(ctx, &ann, rgba.as_raw()));
+                self.calibration_dialog = Some(CalibrationDialog::new(ctx, &ann, img.width(), img.height(), rgba.as_raw()));
             }
             Err(e) => self.pending_error = Some(format!("Cannot load image: {e}")),
         }

@@ -1,0 +1,27 @@
+[package]
+name = "coralx"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.103"
+calamine = "0.35.0"
+csv = "1.4.0"
+eframe = "0.35.0"
+egui = "0.35.0"
+egui_extras = { version = "0.35.0", features = ["image"] }
+env_logger = "0.11.11"
+geo = "0.33.1"
+image = "0.25.10"
+imageproc = "0.27.0"
+log = "0.4.33"
+ndarray = "0.17.2"
+rand = "0.10.2"
+rfd = "0.17.2"
+rust_xlsxwriter = "0.96.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+statrs = "0.18.0"
+tch = "0.24.0"
+time = { version = "0.3.53", features = ["formatting", "parsing", "macros"] }
+uuid = { version = "1.23.4", features = ["v4"] }

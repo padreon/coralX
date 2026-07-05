@@ -185,80 +185,90 @@ impl CalibrationDialog {
             .min_height(360.0)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .show(ctx, |ui| {
-            ui.label(
-                "Click two points on a known feature (e.g. scale bar or ruler), then enter the real-world distance below.\nScroll or use up/down to zoom. Middle-drag to pan.",
-            );
-            ui.horizontal(|ui| {
-                if ui.button("\u{2191} Zoom In").clicked() {
-                    let rect = ui.max_rect();
-                    self.canvas.apply_zoom(rect, self.canvas.zoom * 1.25, None);
-                }
-                if ui.button("\u{2193} Zoom Out").clicked() {
-                    let rect = ui.max_rect();
-                    self.canvas.apply_zoom(rect, self.canvas.zoom / 1.25, None);
-                }
-                if ui.button("Fit").clicked() {
-                    let rect = ui.max_rect();
-                    self.canvas.zoom_fit(rect);
-                }
-            });
-
-            egui::Frame::new().show(ui, |ui| {
-                ui.set_min_height(220.0);
-                self.canvas.show(ui);
-            });
-
-            ui.separator();
-            let px_dist = self.canvas.pixel_distance();
-            ui.label(match px_dist {
-                Some(d) => format!("Pixel distance: {d:.1} px"),
-                None => "Pixel distance: -".to_string(),
-            });
-
-            ui.horizontal(|ui| {
-                ui.label("Real-world distance:");
-                ui.add(egui::DragValue::new(&mut self.real_dist).range(0.01..=100000.0).speed(0.5));
-                egui::ComboBox::from_id_salt("calib_unit").selected_text(self.unit()).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.unit_is_cm, true, "cm");
-                    ui.selectable_value(&mut self.unit_is_cm, false, "m");
+            // Pin Apply/Cancel to the bottom of the dialog first, so they're
+            // always reachable no matter how tall the scrollable content
+            // above ends up — the canvas + all the preview labels can
+            // otherwise easily exceed the app window's height.
+            let mut sf_for_buttons = None;
+            egui::Panel::bottom("calib_buttons").show(ui, |ui| {
+                ui.separator();
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let px_dist = self.canvas.pixel_distance();
+                    let sf = px_dist.filter(|&d| d > 0.0).map(|d| d as f64 / self.real_dist);
+                    sf_for_buttons = sf;
+                    if ui.add_enabled(sf.is_some(), egui::Button::new("Apply Calibration")).clicked() {
+                        if let Some(sf) = sf {
+                            outcome = Some(Ok(CalibrationResult { scale_factor: sf, unit: self.unit().to_string(), apply_to_all: self.apply_all }));
+                        }
+                    }
+                    if ui.button("Cancel").clicked() {
+                        outcome = Some(Err(()));
+                    }
                 });
             });
 
-            let sf = px_dist.filter(|&d| d > 0.0).map(|d| d as f64 / self.real_dist);
-            match sf {
-                Some(sf) => {
-                    ui.label(format!("Scale factor: {sf:.3} px/{}", self.unit()));
-                    if self.image_width > 0 && self.image_height > 0 {
-                        let (w, h) = (self.image_width as f64 / sf, self.image_height as f64 / sf);
-                        ui.label(format!("Photo area: {:.2} {}\u{b2} ({w:.1} x {h:.1} {})", w * h, self.unit(), self.unit()));
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.label(
+                    "Click two points on a known feature (e.g. scale bar or ruler), then enter the real-world distance below.\nScroll or use up/down to zoom. Middle-drag to pan.",
+                );
+                ui.horizontal(|ui| {
+                    if ui.button("\u{2191} Zoom In").clicked() {
+                        let rect = ui.max_rect();
+                        self.canvas.apply_zoom(rect, self.canvas.zoom * 1.25, None);
+                    }
+                    if ui.button("\u{2193} Zoom Out").clicked() {
+                        let rect = ui.max_rect();
+                        self.canvas.apply_zoom(rect, self.canvas.zoom / 1.25, None);
+                    }
+                    if ui.button("Fit").clicked() {
+                        let rect = ui.max_rect();
+                        self.canvas.zoom_fit(rect);
+                    }
+                });
+
+                egui::Frame::new().show(ui, |ui| {
+                    ui.set_min_height(220.0);
+                    self.canvas.show(ui);
+                });
+
+                ui.separator();
+                let px_dist = self.canvas.pixel_distance();
+                ui.label(match px_dist {
+                    Some(d) => format!("Pixel distance: {d:.1} px"),
+                    None => "Pixel distance: -".to_string(),
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Real-world distance:");
+                    ui.add(egui::DragValue::new(&mut self.real_dist).range(0.01..=100000.0).speed(0.5));
+                    egui::ComboBox::from_id_salt("calib_unit").selected_text(self.unit()).show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.unit_is_cm, true, "cm");
+                        ui.selectable_value(&mut self.unit_is_cm, false, "m");
+                    });
+                });
+
+                match sf_for_buttons {
+                    Some(sf) => {
+                        ui.label(format!("Scale factor: {sf:.3} px/{}", self.unit()));
+                        if self.image_width > 0 && self.image_height > 0 {
+                            let (w, h) = (self.image_width as f64 / sf, self.image_height as f64 / sf);
+                            ui.label(format!("Photo area: {:.2} {}\u{b2} ({w:.1} x {h:.1} {})", w * h, self.unit(), self.unit()));
+                        }
+                    }
+                    None => {
+                        ui.label("Scale factor: -");
+                        ui.label("Photo area: -");
                     }
                 }
-                None => {
-                    ui.label("Scale factor: -");
-                    ui.label("Photo area: -");
+                if self.current_scale_factor > 1.0 {
+                    ui.label(format!("Current: {:.2} px/{}", self.current_scale_factor, self.current_scale_unit));
                 }
-            }
-            if self.current_scale_factor > 1.0 {
-                ui.label(format!("Current: {:.2} px/{}", self.current_scale_factor, self.current_scale_unit));
-            }
 
-            ui.separator();
-            if ui.button("Reset points").clicked() {
-                self.canvas.reset_points();
-            }
-            ui.checkbox(&mut self.apply_all, "Apply this scale to all images in this station");
-
-            ui.separator();
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let can_apply = sf.is_some();
-                if ui.add_enabled(can_apply, egui::Button::new("Apply Calibration")).clicked() {
-                    if let Some(sf) = sf {
-                        outcome = Some(Ok(CalibrationResult { scale_factor: sf, unit: self.unit().to_string(), apply_to_all: self.apply_all }));
-                    }
+                ui.separator();
+                if ui.button("Reset points").clicked() {
+                    self.canvas.reset_points();
                 }
-                if ui.button("Cancel").clicked() {
-                    outcome = Some(Err(()));
-                }
+                ui.checkbox(&mut self.apply_all, "Apply this scale to all images in this station");
             });
         });
 

@@ -1,9 +1,10 @@
+use crate::ui::measurement_window::MeasurementScreen;
 use crate::ui::welcome_screen::{self, Mode};
 
 enum Screen {
     Welcome,
     PointCount,
-    Measurement,
+    Measurement(MeasurementScreen),
 }
 
 pub struct CoralXApp {
@@ -18,20 +19,20 @@ impl Default for CoralXApp {
 
 impl eframe::App for CoralXApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        match self.screen {
+        match &mut self.screen {
             Screen::Welcome => {
                 if let Some(mode) = welcome_screen::show(ui) {
                     self.screen = match mode {
                         Mode::PointCount => Screen::PointCount,
-                        Mode::Measurement => Screen::Measurement,
+                        Mode::Measurement => Screen::Measurement(MeasurementScreen::new(None)),
                     };
                 }
             }
             Screen::PointCount => {
                 ui.label("Coral Point Count mode — main_window.py not yet ported.");
             }
-            Screen::Measurement => {
-                ui.label("Fragment Measurement mode — measurement_window.py not yet ported.");
+            Screen::Measurement(screen) => {
+                screen.show(ui);
             }
         }
     }

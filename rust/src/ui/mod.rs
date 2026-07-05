@@ -5,6 +5,7 @@ pub mod calibration_dialog;
 pub mod image_canvas;
 pub mod import_dialogs;
 pub mod measurement_label_dialog;
+pub mod measurement_window;
 pub mod progress_dialog;
 pub mod settings;
 pub mod welcome_screen;

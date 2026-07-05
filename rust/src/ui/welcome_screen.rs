@@ -49,6 +49,7 @@ fn card(ui: &mut Ui, icon: &str, title: &str, desc: &str) -> bool {
     let border = if hovered { ACCENT } else { CARD_BORDER };
     ui.painter().rect(rect, 10.0, bg, egui::Stroke::new(2.0, border), egui::StrokeKind::Inside);
 
+    let mut clicked_btn = false;
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(10.0)));
     child.vertical_centered(|ui| {
         ui.add_space(6.0);
@@ -56,13 +57,10 @@ fn card(ui: &mut Ui, icon: &str, title: &str, desc: &str) -> bool {
         ui.label(RichText::new(title).size(15.0).strong());
         ui.label(RichText::new(desc).size(11.0).color(DESC_GRAY));
         ui.add_space(4.0);
-        let clicked_btn = ui
+        clicked_btn = ui
             .add(egui::Button::new(RichText::new("Select").color(Color32::from_rgb(0x11, 0x11, 0x11)).strong()).fill(ACCENT))
             .clicked();
-        if clicked_btn {
-            ui.ctx().request_repaint();
-        }
     });
 
-    response.clicked()
+    response.clicked() || clicked_btn
 }

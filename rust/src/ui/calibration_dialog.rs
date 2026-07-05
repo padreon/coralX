@@ -178,7 +178,13 @@ impl CalibrationDialog {
     pub fn show(&mut self, ctx: &Context) -> Option<Result<CalibrationResult, ()>> {
         let mut outcome = None;
 
-        egui::Window::new("Calibrate Image Scale").collapsible(false).default_size([700.0, 780.0]).min_width(500.0).min_height(500.0).show(ctx, |ui| {
+        egui::Window::new("Calibrate Image Scale")
+            .collapsible(false)
+            .default_size([560.0, 460.0])
+            .min_width(420.0)
+            .min_height(360.0)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
             ui.label(
                 "Click two points on a known feature (e.g. scale bar or ruler), then enter the real-world distance below.\nScroll or use up/down to zoom. Middle-drag to pan.",
             );
@@ -198,7 +204,7 @@ impl CalibrationDialog {
             });
 
             egui::Frame::new().show(ui, |ui| {
-                ui.set_min_height(400.0);
+                ui.set_min_height(220.0);
                 self.canvas.show(ui);
             });
 

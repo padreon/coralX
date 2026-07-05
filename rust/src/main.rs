@@ -1,5 +1,4 @@
-mod core;
-mod models;
+use coralx::core;
 
 fn main() {
     core::logger::setup_logging();

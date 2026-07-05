@@ -1,3 +1,4 @@
+pub mod ai_labeler;
 pub mod analysis;
 pub mod comparison;
 pub mod exporter;

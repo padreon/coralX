@@ -1,9 +1,10 @@
+use crate::ui::main_window::PointCountScreen;
 use crate::ui::measurement_window::MeasurementScreen;
 use crate::ui::welcome_screen::{self, Mode};
 
 enum Screen {
     Welcome,
-    PointCount,
+    PointCount(PointCountScreen),
     Measurement(MeasurementScreen),
 }
 
@@ -23,13 +24,13 @@ impl eframe::App for CoralXApp {
             Screen::Welcome => {
                 if let Some(mode) = welcome_screen::show(ui) {
                     self.screen = match mode {
-                        Mode::PointCount => Screen::PointCount,
+                        Mode::PointCount => Screen::PointCount(PointCountScreen::new()),
                         Mode::Measurement => Screen::Measurement(MeasurementScreen::new(None)),
                     };
                 }
             }
-            Screen::PointCount => {
-                ui.label("Coral Point Count mode — main_window.py not yet ported.");
+            Screen::PointCount(screen) => {
+                screen.show(ui);
             }
             Screen::Measurement(screen) => {
                 screen.show(ui);

@@ -10,6 +10,8 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFont
 from src.core.logger import get_logger, install_excepthook, install_qt_message_handler, setup_logging
 from src.ui.main_window import MainWindow
+from src.ui.measurement_window import MeasurementWindow
+from src.ui.welcome_screen import WelcomeScreen
 
 
 def main():
@@ -26,8 +28,19 @@ def main():
 
     font = QFont("Segoe UI", 10)
     app.setFont(font)
-    window = MainWindow()
+
+    welcome = WelcomeScreen()
+    if welcome.exec() != WelcomeScreen.DialogCode.Accepted:
+        sys.exit(0)
+
+    mode = welcome.get_mode()
+    if mode == "measurement":
+        window = MeasurementWindow()
+    else:
+        window = MainWindow()
+
     window.show()
+
     exit_code = app.exec()
     log.info("coralX exiting (code %d)", exit_code)
     sys.exit(exit_code)

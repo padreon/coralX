@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 import json
+import uuid
 
 
 @dataclass
@@ -13,6 +14,38 @@ class Point:
 
 
 @dataclass
+class Measurement:
+    id: str
+    type: str                            # "line" | "polyline" | "polygon"
+    label: str                           # fragment name, e.g. "Frag-01"
+    points: list[tuple[float, float]]    # image-space pixel coords [(x, y), ...]
+    value: float                         # length (unit) or area (unit²)
+    unit: str                            # "cm" or "m"
+    species: str = ""                    # genus / species name
+    auto_width: float = 0.0             # oriented/bbox width in real units
+    auto_height: float = 0.0            # oriented/bbox height in real units
+    area: float = 0.0                   # polygon area in real units²
+    perimeter_len: float = 0.0          # polygon perimeter in real units
+    angle: float = 0.0                  # tilt of the height axis, degrees from horizontal
+
+    @staticmethod
+    def new(mtype: str, label: str,
+            points: list[tuple[float, float]],
+            value: float, unit: str,
+            species: str = "",
+            auto_width: float = 0.0,
+            auto_height: float = 0.0,
+            area: float = 0.0,
+            perimeter_len: float = 0.0,
+            angle: float = 0.0) -> "Measurement":
+        return Measurement(id=str(uuid.uuid4()), type=mtype, label=label,
+                           points=points, value=value, unit=unit,
+                           species=species,
+                           auto_width=auto_width, auto_height=auto_height,
+                           area=area, perimeter_len=perimeter_len, angle=angle)
+
+
+@dataclass
 class ImageAnnotation:
     image_path: str
     points: list[Point] = field(default_factory=list)
@@ -20,6 +53,7 @@ class ImageAnnotation:
     image_height: int = 0
     scale_factor: float = 1.0   # pixels per scale_unit; 1.0 = not calibrated
     scale_unit: str = "cm"      # "cm" or "m"
+    measurements: list[Measurement] = field(default_factory=list)
 
     def labeled_count(self) -> int:
         return sum(1 for p in self.points if p.label is not None)
@@ -71,6 +105,7 @@ class Project:
     border_polygon: list | None = None  # [[x, y], ...] if set by polygon drawing
     coral_codes: dict = field(default_factory=dict)
     coral_groups: list = field(default_factory=list)  # [{"name": str, "codes": [str]}]
+    species_list: list[str] = field(default_factory=list)  # known species/genus names
     stations: list[Station] = field(default_factory=list)
     save_path: Optional[str] = None
 
@@ -89,6 +124,7 @@ class Project:
             "border_polygon": self.border_polygon,
             "coral_codes": self.coral_codes,
             "coral_groups": self.coral_groups,
+            "species_list": self.species_list,
             "stations": [
                 {
                     "name": s.name,
@@ -108,6 +144,15 @@ class Project:
                                 {"x": p.x, "y": p.y, "index": p.index,
                                  "label": p.label, "category": p.category}
                                 for p in a.points
+                            ],
+                            "measurements": [
+                                {"id": m.id, "type": m.type, "label": m.label,
+                                 "points": m.points, "value": m.value, "unit": m.unit,
+                                 "species": m.species,
+                                 "auto_width": m.auto_width, "auto_height": m.auto_height,
+                                 "area": m.area, "perimeter_len": m.perimeter_len,
+                                 "angle": m.angle}
+                                for m in a.measurements
                             ],
                         }
                         for a in s.annotations
@@ -134,6 +179,7 @@ class Project:
             border_polygon=data.get("border_polygon"),
             coral_codes=data["coral_codes"],
             coral_groups=data.get("coral_groups", []),
+            species_list=data.get("species_list", []),
         )
 
         def _load_annotation(a_data: dict) -> ImageAnnotation:
@@ -146,6 +192,21 @@ class Project:
             )
             for p_data in a_data["points"]:
                 ann.points.append(Point(**p_data))
+            for m_data in a_data.get("measurements", []):
+                ann.measurements.append(Measurement(
+                    id=m_data["id"],
+                    type=m_data["type"],
+                    label=m_data["label"],
+                    points=[tuple(pt) for pt in m_data["points"]],
+                    value=m_data["value"],
+                    unit=m_data["unit"],
+                    species=m_data.get("species", ""),
+                    auto_width=m_data.get("auto_width", 0.0),
+                    auto_height=m_data.get("auto_height", 0.0),
+                    area=m_data.get("area", 0.0),
+                    perimeter_len=m_data.get("perimeter_len", 0.0),
+                    angle=m_data.get("angle", 0.0),
+                ))
             return ann
 
         if "stations" in data:

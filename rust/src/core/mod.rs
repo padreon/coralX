@@ -2,6 +2,7 @@ pub mod analysis;
 pub mod comparison;
 pub mod logger;
 pub mod measurement_exporter;
+pub mod measurement_tools;
 pub mod multivariate;
 pub mod point_generator;
 pub mod statistics;

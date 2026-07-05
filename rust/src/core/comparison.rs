@@ -5,8 +5,8 @@
 
 use std::collections::HashMap;
 
-use rand::{Rng, RngExt, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{RngExt, SeedableRng};
 use statrs::distribution::{ChiSquared, ContinuousCDF, FisherSnedecor, StudentsT};
 use time::{macros::format_description, Date};
 

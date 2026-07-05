@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use rand::{Rng, RngExt};
+use rand::RngExt;
 
 use crate::models::Point;
 

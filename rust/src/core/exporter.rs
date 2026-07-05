@@ -133,7 +133,7 @@ fn write_row(sheet: &mut Worksheet, row_num: u32, columns: &[String], row: &Row,
     Ok(())
 }
 
-fn write_table_sheet(workbook: &mut Workbook, name: &str, rows: &[Row], fill_zero: bool) -> Result<()> {
+pub(crate) fn write_table_sheet(workbook: &mut Workbook, name: &str, rows: &[Row], fill_zero: bool) -> Result<()> {
     let sheet = workbook.add_worksheet();
     sheet.set_name(sheet_name(name))?;
     let columns = column_union(rows);
@@ -146,7 +146,7 @@ fn write_table_sheet(workbook: &mut Workbook, name: &str, rows: &[Row], fill_zer
     Ok(())
 }
 
-fn metric_row(metric: &str, value: impl Into<Cell>) -> Row {
+pub(crate) fn metric_row(metric: &str, value: impl Into<Cell>) -> Row {
     vec![("Metric".into(), metric.into()), ("Value".into(), value.into())]
 }
 

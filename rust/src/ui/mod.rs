@@ -1,3 +1,4 @@
+pub mod analysis_dialog;
 pub mod app;
 pub mod calibration_dialog;
 pub mod import_dialogs;
